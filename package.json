@@ -1,0 +1,16 @@
+{
+  "name": "@hiimak/git-diagram",
+  "version": "0.1.0",
+  "description": "git diagram: see an AI-sized diff as a connected file diagram instead of reading it line by line",
+  "type": "module",
+  "bin": { "git-diagram": "git-diagram.mjs" },
+  "files": ["git-diagram.mjs", "page.html"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" },
+  "keywords": ["git", "diff", "diagram", "code-review", "ai", "visualization", "pull-request"],
+  "repository": { "type": "git", "url": "git+https://github.com/hiimak/git-diagram.git" },
+  "homepage": "https://github.com/hiimak/git-diagram#readme",
+  "bugs": "https://github.com/hiimak/git-diagram/issues",
+  "license": "MIT",
+  "author": "hiimak"
+}

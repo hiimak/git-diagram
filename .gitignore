@@ -1,0 +1,28 @@
+# dependencies and build output
+node_modules/
+*.tgz
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# AI assistant files and tool output (not part of the project)
+.claude/
+.agents/
+.cursor/
+.windsurf/
+.codex/
+.gemini/
+.continue/
+.aider*
+.playwright-mcp/
+.mcp.json
+.cursorrules
+.clinerules
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+CLAUDE.local.md
+.github/copilot-instructions.md

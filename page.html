@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>git diagram</title>
+<script>try { const t = localStorage.getItem('gd-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  /* light-dark(light, dark): one set of tokens; the theme button just flips color-scheme */
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(#f8fafc, #0f172a); --surface: light-dark(#fff, #1b2336); --sunken: light-dark(#f1f5f9, #151d30);
+    --fg: light-dark(#0f172a, #f8fafc); --muted: light-dark(#475569, #94a3b8); --border: light-dark(#cbd5e1, #334155);
+    --link: light-dark(#4338ca, #a5b4fc); --ring: light-dark(#4f46e5, #818cf8); --edge: #64748b;
+    --plus: light-dark(#047857, #34d399); --minus: light-dark(#b91c1c, #f87171);
+    --added-bg: light-dark(#ecfdf5, #052e22); --added-bd: light-dark(#059669, #34d399); --added-fg: light-dark(#064e3b, #a7f3d0);
+    --modified-bg: light-dark(#fffbeb, #2b2008); --modified-bd: light-dark(#b45309, #fbbf24); --modified-fg: light-dark(#78350f, #fde68a);
+    --deleted-bg: light-dark(#fef2f2, #2f0d12); --deleted-bd: light-dark(#b91c1c, #f87171); --deleted-fg: light-dark(#7f1d1d, #fecaca);
+    --renamed-bg: light-dark(#eff6ff, #0c1f3d); --renamed-bd: light-dark(#1d4ed8, #60a5fa); --renamed-fg: light-dark(#1e3a8a, #bfdbfe);
+    --context-bg: light-dark(#fff, #1b2336); --context-bd: light-dark(#94a3b8, #64748b); --context-fg: light-dark(#475569, #94a3b8);
+    --diff-add: light-dark(rgba(16, 185, 129, .16), rgba(52, 211, 153, .17)); --diff-del: light-dark(rgba(239, 68, 68, .15), rgba(248, 113, 113, .17));
+    --hunk: light-dark(#e0e7ff, #272f42); --hunk-fg: light-dark(#3730a3, #c7d2fe);
+    --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace;
+  }
+  [data-theme="light"] { color-scheme: light; } [data-theme="dark"] { color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100dvh; display: grid; grid-template-rows: auto 1fr; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  h1 { margin: 0; font: 600 15px var(--mono); letter-spacing: -.01em; }
+  .stats, .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0; padding: 0; list-style: none; }
+  .stats { font: 500 12px var(--mono); }
+  .range { color: var(--muted); }
+  .add { --c-fg: var(--plus); } .del { --c-fg: var(--minus); }
+  .add, .del { color: var(--c-fg); }
+  .legend { font-size: 12px; color: var(--muted); }
+  .legend li { display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid var(--c-bd); background: var(--c-bg); }
+  .context .swatch { border-style: dashed; }
+  .grow { flex: 1; }
+  .check { display: flex; align-items: center; gap: 6px; min-height: 32px; font-size: 12px; color: var(--muted); }
+  .btn { min-height: 32px; min-width: 32px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; transition: background-color .15s, border-color .15s; }
+  .btn:hover:not(:disabled) { background: var(--sunken); border-color: var(--muted); }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 38vw, 580px); min-height: 0; }
+  .pane { position: relative; min-height: 0; min-width: 0; }
+  #graph { height: 100%; overflow: auto; padding: 16px; background: var(--bg) radial-gradient(var(--border) 1px, transparent 1px) 0 0 / 20px 20px; }
+  #graph > svg { display: block; max-width: none; }
+  .zoom { position: absolute; top: 12px; right: 20px; display: flex; gap: 4px; z-index: 1; }
+  aside { min-height: 0; overflow: auto; background: var(--surface); border-left: 1px solid var(--border); }
+  .pad { padding: 16px; }
+
+  .nav { display: flex; align-items: center; gap: 4px; justify-content: flex-end; font: 12px var(--mono); color: var(--muted); }
+  .path { margin: 8px 0; font: 500 14px/1.4 var(--mono); overflow-wrap: anywhere; }
+  .dir { color: var(--muted); font-weight: 400; }
+  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .badge { display: inline-flex; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--c-bd); background: var(--c-bg); color: var(--c-fg, var(--fg)); font: 500 12px var(--mono); }
+  .badge.plain { --c-bg: transparent; --c-bd: var(--border); }
+  .added { --c-bg: var(--added-bg); --c-bd: var(--added-bd); --c-fg: var(--added-fg); }
+  .modified { --c-bg: var(--modified-bg); --c-bd: var(--modified-bd); --c-fg: var(--modified-fg); }
+  .deleted { --c-bg: var(--deleted-bg); --c-bd: var(--deleted-bd); --c-fg: var(--deleted-fg); }
+  .renamed { --c-bg: var(--renamed-bg); --c-bd: var(--renamed-bd); --c-fg: var(--renamed-fg); }
+  .context { --c-bg: var(--context-bg); --c-bd: var(--context-bd); --c-fg: var(--context-fg); }
+  h2 { margin: 20px 0 6px; font: 600 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .muted { color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { padding: 0 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--sunken); font: 12px/20px var(--mono); }
+  .links { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+  .link { width: 100%; display: flex; gap: 8px; align-items: baseline; padding: 4px 6px; margin: 0 -6px; border: 0; border-radius: 4px; background: none; color: var(--link); text-align: left; font: 13px/1.4 var(--mono); overflow-wrap: anywhere; transition: background-color .15s; }
+  .link:hover { background: var(--sunken); text-decoration: underline; }
+  .via { color: var(--muted); font-size: 12px; }
+
+  .diff { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font: 12px/1.55 var(--mono); }
+  .row { display: grid; grid-template-columns: 4ch 4ch 2ch 1fr; padding-right: 8px; }
+  .ln { padding: 0 6px; text-align: right; color: var(--muted); user-select: none; }
+  .sg { text-align: center; user-select: none; }
+  .tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .row.a { background: var(--diff-add); } .row.d { background: var(--diff-del); }
+  .row.h { background: var(--hunk); color: var(--hunk-fg); } .row.h .tx { grid-column: 3 / -1; }
+
+  /* diagram: the colours come from the status classes above, not from mermaid */
+  #graph .node, #graph .node * { cursor: pointer; }
+  #graph .node { transition: opacity .15s; }
+  #graph .node rect { fill: var(--c-bg) !important; stroke: var(--c-bd) !important; stroke-width: 1.5px !important; rx: 6; ry: 6; transition: stroke-width .15s; }
+  #graph .node.context rect { stroke-dasharray: 5 4; }
+  #graph .node .nodeLabel, #graph .node .label { color: var(--c-fg) !important; fill: var(--c-fg) !important; font-family: var(--mono) !important; line-height: 1.45; }
+  .node .nodeLabel { padding: 0 8px; } /* not under #graph on purpose: mermaid measures labels in a detached div */
+  .node .nodeLabel small { font-size: 11px; }
+  #graph .node:hover rect { stroke-width: 2.5px !important; }
+  #graph .node:focus-visible { outline: none; }
+  #graph .node:focus-visible rect, #graph .node.selected rect { stroke: var(--ring) !important; stroke-width: 3px !important; }
+  #graph .cluster rect { fill: var(--sunken) !important; stroke: var(--border) !important; rx: 8; ry: 8; opacity: .9; }
+  #graph .cluster-label .nodeLabel, #graph .cluster-label span { color: var(--muted) !important; font: 500 12px var(--mono) !important; }
+  #graph .flowchart-link { stroke: var(--edge) !important; stroke-width: 1.5px !important; fill: none !important; transition: opacity .15s; }
+  #graph marker path { fill: var(--edge) !important; stroke: var(--edge) !important; }
+  #graph .edgeLabel, #graph .edgeLabel * { background: var(--bg) !important; color: var(--muted) !important; font: 11px var(--mono) !important; }
+  #graph.has-sel .node:not(.rel) { opacity: .6; }
+  #graph.has-sel .flowchart-link:not(.rel) { opacity: .3; }
+  #graph .flowchart-link.rel { stroke: var(--ring) !important; stroke-width: 2.5px !important; }
+
+  .files { border-bottom: 1px solid var(--border); padding: 0 16px; }
+  .files summary { padding: 12px 0; cursor: pointer; font: 600 11px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .files input { width: 100%; min-height: 36px; padding: 0 10px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: 13px var(--mono); }
+  #list { margin: 0 0 12px; padding: 0; list-style: none; max-height: 32vh; overflow: auto; }
+  .frow { width: 100%; display: flex; align-items: baseline; gap: 8px; padding: 3px 6px; border: 0; border-radius: 4px; background: none; text-align: left; font: 12px/1.5 var(--mono); overflow-wrap: anywhere; }
+  .frow:hover { background: var(--sunken); }
+  .frow[aria-current="true"] { background: var(--sunken); outline: 1px solid var(--ring); }
+  .st { flex: none; width: 1.8em; text-align: center; border-radius: 3px; border: 1px solid var(--c-bd); background: var(--c-bg); color: var(--c-fg); }
+  .cnt { margin-left: auto; flex: none; color: var(--muted); white-space: nowrap; }
+
+  @media (max-width: 900px) {
+    body { height: auto; min-height: 100dvh; }
+    main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }
+    aside { border-left: 0; border-top: 1px solid var(--border); }
+  }
+  @media (pointer: coarse) { .btn { min-height: 44px; min-width: 44px; } .link, .frow, .check { min-height: 44px; align-items: center; } .files input { min-height: 44px; font-size: 16px; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style></head>
+<body>
+<header>
+  <h1>git diagram</h1>
+  <ul class="stats" id="stats" aria-label="Summary"></ul>
+  <button class="btn" id="theme" type="button" aria-label="Toggle light / dark theme" title="Toggle theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16a8 8 0 0 0 0-16z" fill="currentColor"/></svg></button>
+  <label class="check" id="ctxlabel"><input type="checkbox" id="ctx"> show unchanged neighbours (<span id="ctxn"></span>)</label>
+  <span class="grow"></span>
+  <ul class="legend" aria-label="Legend">
+    <li class="added"><span class="swatch"></span>added</li><li class="modified"><span class="swatch"></span>modified</li>
+    <li class="deleted"><span class="swatch"></span>deleted</li><li class="renamed"><span class="swatch"></span>renamed</li>
+    <li class="context"><span class="swatch"></span>unchanged, connected</li>
+  </ul>
+</header>
+<main>
+  <div class="pane">
+    <div class="zoom" role="group" aria-label="Zoom">
+      <button class="btn" id="zout" type="button" aria-label="Zoom out">−</button>
+      <button class="btn" id="zfit" type="button" aria-label="Fit diagram to window">Fit</button>
+      <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
+    </div>
+    <div id="graph" tabindex="-1" aria-label="Diagram of changed files. Arrows show data flow from the imported file to the file that uses it.">Rendering…</div>
+  </div>
+  <aside aria-label="Files and details">
+    <details class="files" id="files" open><summary>Files (<span id="fcount"></span>)</summary>
+      <input type="search" id="filter" placeholder="Filter files" aria-label="Filter files"><ul id="list"></ul></details>
+    <div id="panel"></div>
+  </aside>
+</main>
+<script type="application/json" id="data">__DATA__</script>
+<script type="module">
+const { nodes, edges, mermaid: src, mermaidChanged: srcChanged, range } = JSON.parse(document.getElementById('data').textContent);
+const $ = id => document.getElementById(id);
+const graph = $('graph'), panel = $('panel'), list = $('list'), filter = $('filter'), ctx = $('ctx');
+const MONO = "'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace";
+const LETTER = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R', context: '·' };
+const index = new Map(nodes.map((n, i) => [n.path, i]));
+const boxes = new Map();
+const changed = nodes.filter(n => n.status !== 'context');
+const nCtx = nodes.length - changed.length;
+let current = -1, svg, base, scale = 1;
+let showCtx = nodes.length <= 40; // big diagrams start without the grey neighbours
+const el = (tag, text, cls) => Object.assign(document.createElement(tag), { textContent: text ?? '', className: cls ?? '' });
+const visible = () => nodes.map((_, i) => i).filter(i => showCtx || nodes[i].status !== 'context');
+
+// header
+for (const [t, c] of [[changed.length + ' files'], ['+' + changed.reduce((s, n) => s + n.add, 0), 'add'],
+  ['−' + changed.reduce((s, n) => s + n.del, 0), 'del'], [edges.length + ' connections'], [range, 'range']]) $('stats').append(el('li', t, c));
+$('theme').onclick = () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  try { localStorage.setItem('gd-theme', root.dataset.theme); } catch {}
+};
+
+// file list: the way in on a phone and on any big diff
+$('fcount').textContent = changed.length;
+const rows = nodes.map((n, i) => {
+  const b = el('button', '', 'frow ' + n.status), k = n.path.lastIndexOf('/');
+  b.type = 'button';
+  b.title = n.status;
+  b.append(el('span', LETTER[n.status], 'st'), el('span'), el('span', n.status === 'context' ? '' : '+' + n.add + ' −' + n.del, 'cnt'));
+  b.children[1].append(el('span', n.path.slice(0, k + 1), 'dir'), n.path.slice(k + 1));
+  b.onclick = () => { select(i, true); if (matchMedia('(max-width: 900px)').matches) $('files').open = false; };
+  const li = el('li');
+  li.append(b);
+  list.append(li);
+  return li;
+});
+function filterList() {
+  const q = filter.value.trim().toLowerCase();
+  rows.forEach((li, i) => { li.hidden = (q && !nodes[i].path.toLowerCase().includes(q)) || (!showCtx && nodes[i].status === 'context'); });
+}
+filter.oninput = filterList;
+ctx.checked = showCtx;
+$('ctxn').textContent = nCtx;
+$('ctxlabel').hidden = !nCtx;
+filterList();
+
+function link(path, glyph, via) {
+  const b = el('button', '', 'link'), li = el('li');
+  b.type = 'button';
+  b.append(el('span', glyph), el('span', path));
+  if (via) b.append(el('span', via, 'via'));
+  b.onclick = () => select(index.get(path), true);
+  li.append(b);
+  return li;
+}
+
+function diffView(lines) {
+  const box = el('div', '', 'diff');
+  let o = 0, n = 0;
+  for (const l of lines) {
+    const c = l[0];
+    let a = '', b = '', t = l;
+    if (c === '@') { const m = l.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/); if (m) { o = +m[1]; n = +m[2]; } }
+    else if (c === '+') { b = n++; t = l.slice(1); }
+    else if (c === '-') { a = o++; t = l.slice(1); }
+    else if (c === ' ') { a = o++; b = n++; t = l.slice(1); }
+    const row = el('div', '', 'row ' + ({ '@': 'h', '+': 'a', '-': 'd' }[c] ?? ''));
+    row.append(el('span', a, 'ln'), el('span', b, 'ln'), el('span', c === '+' || c === '-' ? c : '', 'sg'), el('span', t, 'tx'));
+    box.append(row);
+  }
+  return box;
+}
+
+function step(label, d, v) {
+  const b = el('button', label, 'btn'), t = v[v.indexOf(current) + d];
+  b.type = 'button';
+  b.setAttribute('aria-label', d < 0 ? 'Previous file' : 'Next file');
+  b.disabled = t === undefined;
+  b.onclick = () => select(t, true);
+  return b;
+}
+
+function select(i, reveal) {
+  if (i < 0 || i >= nodes.length) return;
+  current = i;
+  const n = nodes[i], v = visible();
+  const rel = new Set([n.path]);
+  edges.forEach(e => { if (e.from === n.path) rel.add(e.to); if (e.to === n.path) rel.add(e.from); });
+  graph.classList.toggle('has-sel', boxes.size > 0);
+  boxes.forEach((box, j) => {
+    box.classList.toggle('selected', j === i);
+    box.classList.toggle('rel', rel.has(nodes[j].path));
+    box.setAttribute('aria-pressed', j === i);
+  });
+  svg?.querySelectorAll('path.flowchart-link').forEach(p => {
+    const cls = [...p.classList];
+    const s = cls.find(c => c.startsWith('LS-'))?.slice(3), e = cls.find(c => c.startsWith('LE-'))?.slice(3);
+    p.classList.toggle('rel', s === 'n' + i || e === 'n' + i);
+  });
+  if (reveal) boxes.get(i)?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+
+  const k = n.path.lastIndexOf('/'), path = el('div', '', 'path'), nav = el('div', '', 'nav'), meta = el('div', '', 'meta'), body = el('div', '', 'pad');
+  path.append(el('span', n.path.slice(0, k + 1), 'dir'), n.path.slice(k + 1));
+  nav.append(el('span', (v.indexOf(i) + 1) + ' / ' + v.length), step('‹', -1, v), step('›', 1, v));
+  meta.append(el('span', n.status, 'badge ' + n.status));
+  if (n.status !== 'context') meta.append(el('span', '+' + n.add, 'badge plain add'), el('span', '−' + n.del, 'badge plain del'));
+  body.append(nav, path, meta);
+  if (n.status === 'renamed') body.append(el('p', 'renamed from ' + n.oldPath, 'muted'));
+  for (const [title, glyph, key, other] of [['Gets data from', '←', 'to', 'from'], ['Feeds data to', '→', 'from', 'to']]) {
+    const found = edges.filter(e => e[key] === n.path);
+    if (!found.length) continue;
+    const ul = el('ul', '', 'links');
+    found.forEach(e => ul.append(link(e[other], glyph, e.names.join(', '))));
+    body.append(el('h2', title), ul);
+  }
+  if (n.symbols.length) {
+    const chips = el('div', '', 'chips');
+    n.symbols.forEach(s => chips.append(el('span', s, 'chip')));
+    body.append(el('h2', 'Touched symbols'), chips);
+  }
+  if (n.status === 'context') body.append(el('p', 'Not changed. Shown because it is connected to a changed file.', 'muted'));
+  else body.append(el('h2', 'Changes'), n.diff.length ? diffView(n.diff) : el('p', 'No content changes.', 'muted'));
+  panel.replaceChildren(body);
+  rows.forEach((li, j) => li.firstChild.setAttribute('aria-current', j === i));
+  if (reveal) rows[i].scrollIntoView({ block: 'nearest' });
+}
+
+function setScale(s) {
+  if (!svg) return;
+  scale = Math.min(2.5, Math.max(.25, s));
+  svg.style.width = base.w * scale + 'px';
+  svg.style.height = base.h * scale + 'px';
+}
+// never fit below 55%: smaller than that the text is unreadable, so a big diagram scrolls instead
+const fit = () => setScale(Math.max(.55, Math.min(1, (graph.clientWidth - 32) / base.w, (graph.clientHeight - 32) / base.h)));
+$('zin').onclick = () => setScale(scale * 1.25);
+$('zout').onclick = () => setScale(scale / 1.25);
+$('zfit').onclick = () => svg && fit();
+
+try {
+  const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs');
+  // measure with the font the CSS uses, or boxes clip their text
+  await Promise.race([document.fonts.load("13px 'JetBrains Mono'"), new Promise(r => setTimeout(r, 1500))]).catch(() => {});
+  mermaid.initialize({ startOnLoad: false, maxTextSize: 1e7, maxEdges: 1e5, theme: 'base',
+    themeVariables: { fontFamily: MONO, fontSize: '13px' },
+    flowchart: { useMaxWidth: false, curve: 'step', nodeSpacing: 36, rankSpacing: 80, padding: 14 } });
+  let drawn = 0;
+  const draw = async () => {
+    graph.innerHTML = (await mermaid.render('diagram' + drawn++, showCtx ? src : srcChanged)).svg;
+    boxes.clear();
+    svg = graph.querySelector('svg');
+    base = { w: svg.viewBox.baseVal.width, h: svg.viewBox.baseVal.height };
+    for (const box of graph.querySelectorAll('.node')) {
+      const m = box.id.match(/^flowchart-n(\d+)-/);
+      if (!m) continue;
+      const i = +m[1];
+      boxes.set(i, box);
+      box.setAttribute('tabindex', '0');
+      box.setAttribute('role', 'button');
+      box.setAttribute('aria-label', nodes[i].path + ', ' + nodes[i].status);
+      box.addEventListener('click', () => select(i));
+      box.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(i); } });
+    }
+    fit();
+  };
+  await draw();
+  ctx.onchange = async () => {
+    showCtx = ctx.checked;
+    if (!showCtx && nodes[current].status === 'context') current = 0;
+    filterList();
+    await draw();
+    select(current, true);
+  };
+} catch (err) {
+  graph.replaceChildren(el('p', 'Could not draw the diagram (' + err.message + '). Pick a file:', 'muted'));
+  const ul = el('ul', '', 'links');
+  nodes.forEach(n => ul.append(link(n.path, '•', n.status)));
+  graph.append(ul);
+}
+select(0, true);
+</script>
+</body></html>
