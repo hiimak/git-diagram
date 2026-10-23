@@ -152,6 +152,11 @@
 </main>
 <script type="application/json" id="data">__DATA__</script>
 <script type="module">
+// What this script does:
+//   - reads the data git-diagram.mjs embedded above: nodes (files), edges (arrows), diagram source
+//   - fills the header, the file list and the side panel (select() shows one file)
+//   - draws the diagram with Mermaid and wires up clicks, zoom and the "unchanged neighbours" toggle
+// Boxes are matched to files by id: the box "n3" in the diagram is nodes[3].
 const { nodes, edges, mermaid: src, mermaidChanged: srcChanged, range } = JSON.parse(document.getElementById('data').textContent);
 const $ = id => document.getElementById(id);
 const graph = $('graph'), panel = $('panel'), list = $('list'), filter = $('filter'), ctx = $('ctx');
