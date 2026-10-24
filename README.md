@@ -1,5 +1,9 @@
 # git diagram
 
+[![npm](https://img.shields.io/npm/v/@hiimak/git-diagram)](https://www.npmjs.com/package/@hiimak/git-diagram)
+[![tests](https://github.com/hiimak/git-diagram/actions/workflows/ci.yml/badge.svg)](https://github.com/hiimak/git-diagram/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/@hiimak/git-diagram)](LICENSE)
+
 **See a big diff as a picture before you read it line by line.**
 
 `git diagram` turns your changes into an interactive diagram in the browser: one box per changed file, arrows showing which files feed data into which, and a click on any box shows that file's diff.
@@ -58,7 +62,7 @@ cd git-diagram
 npm install -g .
 ```
 
-> Tested: the npm install route on Windows. The Homebrew formula and the Linux/macOS commands are written but not yet run on those systems.
+> Tested: installing from npm on Windows. The Homebrew formula and the Linux/macOS commands are written but not yet run on those systems.
 
 ## Use
 
@@ -89,6 +93,8 @@ Anything you pass is handed to `git diff`, so any range that works there works h
 - **Folders** are the grouped lanes.
 - **Click a box** (or tap it, or press Enter on it) to see its diff with line numbers, what it gets data from, and what it feeds. The connected files stay bright and everything else dims.
 - **Files list** on the right: filter by name, jump to any file, step with ‹ ›. This is the quickest way in on a phone.
+- **Legend** items are filters: click added, modified, deleted, renamed or unchanged to hide or show that kind.
+- **Zoom** with the buttons, a trackpad pinch, or Alt + mouse wheel over the diagram. **Drag the divider** between diagram and side panel to resize it (desktop).
 - **Show unchanged neighbours** adds the grey boxes. It starts off on big diffs (over 40 boxes) to keep the picture readable.
 - **Light and dark** follow your system; the button in the header flips it.
 
