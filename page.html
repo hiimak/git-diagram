@@ -37,7 +37,12 @@
   .add { --c-fg: var(--plus); } .del { --c-fg: var(--minus); }
   .add, .del { color: var(--c-fg); }
   .legend { font-size: 12px; color: var(--muted); }
-  .legend li { display: flex; align-items: center; gap: 6px; }
+  .legend li { display: flex; }
+  .legend button { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; color: inherit; cursor: pointer; }
+  .legend button:hover { background: var(--sunken); }
+  .legend button[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+  .legend button[aria-pressed="false"] .swatch { background: transparent; }
+  .gone { display: none; }
   .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid var(--c-bd); background: var(--c-bg); }
   .context .swatch { border-style: dashed; }
   .grow { flex: 1; }
@@ -133,9 +138,9 @@
   <label class="check" id="ctxlabel"><input type="checkbox" id="ctx"> show unchanged neighbours (<span id="ctxn"></span>)</label>
   <span class="grow"></span>
   <ul class="legend" aria-label="Legend">
-    <li class="added"><span class="swatch"></span>added</li><li class="modified"><span class="swatch"></span>modified</li>
-    <li class="deleted"><span class="swatch"></span>deleted</li><li class="renamed"><span class="swatch"></span>renamed</li>
-    <li class="context"><span class="swatch"></span>unchanged, connected</li>
+    <li class="added"><button type="button" aria-pressed="true" title="Show / hide added"><span class="swatch"></span>added</button></li><li class="modified"><button type="button" aria-pressed="true" title="Show / hide modified"><span class="swatch"></span>modified</button></li>
+    <li class="deleted"><button type="button" aria-pressed="true" title="Show / hide deleted"><span class="swatch"></span>deleted</button></li><li class="renamed"><button type="button" aria-pressed="true" title="Show / hide renamed"><span class="swatch"></span>renamed</button></li>
+    <li class="context"><button type="button" aria-pressed="true" title="Show / hide unchanged, connected"><span class="swatch"></span>unchanged, connected</button></li>
   </ul>
 </header>
 <main>
@@ -187,7 +192,9 @@ const nCtx = nodes.length - changed.length;
 let current = -1, svg, base, scale = 1;
 let showCtx = nodes.length <= 40; // big diagrams start without the grey neighbours
 const el = (tag, text, cls) => Object.assign(document.createElement(tag), { textContent: text ?? '', className: cls ?? '' });
-const visible = () => nodes.map((_, i) => i).filter(i => showCtx || nodes[i].status !== 'context');
+const off = new Set(); // statuses switched off in the legend
+const shown = n => n.status === 'context' ? showCtx : !off.has(n.status);
+const visible = () => nodes.map((_, i) => i).filter(i => shown(nodes[i]));
 
 // header
 for (const [t, c] of [[changed.length + ' files'], ['+' + changed.reduce((s, n) => s + n.add, 0), 'add'],
@@ -215,13 +222,32 @@ const rows = nodes.map((n, i) => {
 });
 function filterList() {
   const q = filter.value.trim().toLowerCase();
-  rows.forEach((li, i) => { li.hidden = (q && !nodes[i].path.toLowerCase().includes(q)) || (!showCtx && nodes[i].status === 'context'); });
+  rows.forEach((li, i) => { li.hidden = (q && !nodes[i].path.toLowerCase().includes(q)) || !shown(nodes[i]); });
 }
 filter.oninput = filterList;
 ctx.checked = showCtx;
+document.querySelector('.legend .context button').setAttribute('aria-pressed', showCtx);
 $('ctxn').textContent = nCtx;
 $('ctxlabel').hidden = !nCtx;
 filterList();
+
+// legend: click a status to hide / show it (the grey one is the neighbours checkbox)
+function applyFilter() {
+  boxes.forEach((box, i) => box.classList.toggle('gone', !shown(nodes[i])));
+  svg?.querySelectorAll('path.flowchart-link').forEach(p => {
+    const ends = [...p.classList].filter(c => /^L[SE]-n\d+$/.test(c)).map(c => nodes[+c.slice(4)]);
+    p.classList.toggle('gone', ends.some(n => !shown(n)));
+  });
+  filterList();
+}
+document.querySelectorAll('.legend button').forEach(b => b.onclick = () => {
+  const status = b.parentElement.className;
+  if (status === 'context') return ctx.click();
+  off.has(status) ? off.delete(status) : off.add(status);
+  b.setAttribute('aria-pressed', !off.has(status));
+  applyFilter();
+  if (!shown(nodes[current])) { const v = visible(); if (v.length) select(v[0], true); }
+});
 
 function link(path, glyph, via) {
   const b = el('button', '', 'link'), li = el('li');
@@ -340,13 +366,14 @@ try {
       box.addEventListener('click', () => select(i));
       box.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(i); } });
     }
+    applyFilter();
     fit();
   };
   await draw();
   ctx.onchange = async () => {
     showCtx = ctx.checked;
-    if (!showCtx && nodes[current].status === 'context') current = 0;
-    filterList();
+    document.querySelector('.legend .context button').setAttribute('aria-pressed', showCtx);
+    if (!shown(nodes[current])) current = visible()[0] ?? 0;
     await draw();
     select(current, true);
   };
