@@ -47,7 +47,9 @@
   .btn:disabled { opacity: .4; cursor: default; }
   .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; }
 
-  main { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 38vw, 580px); min-height: 0; }
+  main { --side: clamp(360px, 38vw, 580px); display: grid; grid-template-columns: minmax(0, 1fr) var(--side); min-height: 0; position: relative; }
+  #resize { position: absolute; top: 0; bottom: 0; right: calc(var(--side) - 3px); width: 7px; cursor: col-resize; z-index: 2; touch-action: none; }
+  #resize:hover, #resize.on { background: var(--muted); opacity: .4; }
   .pane { position: relative; min-height: 0; min-width: 0; }
   #graph { height: 100%; overflow: auto; padding: 16px; background: var(--bg) radial-gradient(var(--border) 1px, transparent 1px) 0 0 / 20px 20px; }
   #graph > svg { display: block; max-width: none; }
@@ -116,6 +118,7 @@
   @media (max-width: 900px) {
     body { height: auto; min-height: 100dvh; }
     main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }
+    #resize { display: none; }
     aside { border-left: 0; border-top: 1px solid var(--border); }
   }
   @media (pointer: coarse) { .btn { min-height: 44px; min-width: 44px; } .link, .frow, .check { min-height: 44px; align-items: center; } .files input { min-height: 44px; font-size: 16px; } }
@@ -149,6 +152,7 @@
       <input type="search" id="filter" placeholder="Filter files" aria-label="Filter files"><ul id="list"></ul></details>
     <div id="panel"></div>
   </aside>
+  <div id="resize" role="separator" aria-orientation="vertical" aria-label="Resize side panel" tabindex="0"></div>
 </main>
 <script type="application/json" id="data">__DATA__</script>
 <script type="module">
@@ -162,6 +166,20 @@ const $ = id => document.getElementById(id);
 const graph = $('graph'), panel = $('panel'), list = $('list'), filter = $('filter'), ctx = $('ctx');
 const MONO = "'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace";
 const LETTER = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R', context: '·' };
+// Draggable divider (desktop): width in px lives in --side on <main> and is remembered.
+{
+  const main = document.querySelector('main'), bar = $('resize');
+  const setSide = w => main.style.setProperty('--side', Math.max(280, Math.min(w, innerWidth - 320)) + 'px');
+  try { const w = +localStorage.getItem('gd-side'); if (w) setSide(w); } catch {}
+  const save = () => { try { localStorage.setItem('gd-side', parseInt(getComputedStyle(main).getPropertyValue('--side'))); } catch {} };
+  bar.onpointerdown = e => { bar.setPointerCapture(e.pointerId); bar.classList.add('on'); };
+  bar.onpointermove = e => { if (bar.classList.contains('on')) setSide(main.getBoundingClientRect().right - e.clientX); };
+  bar.onpointerup = () => { bar.classList.remove('on'); save(); };
+  bar.onkeydown = e => {
+    const d = { ArrowLeft: 24, ArrowRight: -24 }[e.key]; if (!d) return;
+    setSide(document.querySelector('aside').offsetWidth + d); save(); e.preventDefault();
+  };
+}
 const index = new Map(nodes.map((n, i) => [n.path, i]));
 const boxes = new Map();
 const changed = nodes.filter(n => n.status !== 'context');
