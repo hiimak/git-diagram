@@ -98,7 +98,7 @@
   #graph .node.context rect { stroke-dasharray: 5 4; }
   #graph .node .nodeLabel, #graph .node .label { color: var(--c-fg) !important; fill: var(--c-fg) !important; font-family: var(--mono) !important; line-height: 1.45; }
   .node .nodeLabel { padding: 0 8px; } /* not under #graph on purpose: mermaid measures labels in a detached div */
-  .node .nodeLabel small { font-size: 11px; }
+  .node .nodeLabel small { font-size: 12px; }
   #graph .node:hover rect { stroke-width: 2.5px !important; }
   #graph .node:focus-visible { outline: none; }
   #graph .node:focus-visible rect, #graph .node.selected rect { stroke: var(--ring) !important; stroke-width: 3px !important; }
@@ -107,7 +107,9 @@
   #graph .flowchart-link { stroke: var(--edge) !important; stroke-width: 1.5px !important; fill: none !important; transition: opacity .15s; }
   #graph marker path { fill: var(--edge) !important; stroke: var(--edge) !important; }
   #graph .edgeLabel, #graph .edgeLabel * { background: var(--bg) !important; color: var(--muted) !important; font: 11px var(--mono) !important; }
-  #graph.has-sel .node:not(.rel) { opacity: .6; }
+  /* boxes are never faded (text stays readable on big diffs); the connected ones get a heavier border */
+  #graph.has-sel .node.rel rect { stroke-width: 2.75px !important; }
+  #graph.has-sel .node:not(.rel) rect { stroke-width: 1px !important; }
   #graph.has-sel .flowchart-link:not(.rel) { opacity: .3; }
   #graph .flowchart-link.rel { stroke: var(--ring) !important; stroke-width: 2.5px !important; }
 
