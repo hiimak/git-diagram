@@ -35,12 +35,6 @@ pnpm, yarn and bun work too (`pnpm add -g @hiimak/git-diagram`, `bun add -g @hii
 npx @hiimak/git-diagram
 ```
 
-> The npm package is ready but not yet published. Until it is, install straight from GitHub (same result):
->
-> ```bash
-> npm install -g github:hiimak/git-diagram
-> ```
-
 ### Homebrew (macOS, Linux)
 
 ```bash
