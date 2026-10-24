@@ -36,15 +36,16 @@
   .range { color: var(--muted); }
   .add { --c-fg: var(--plus); } .del { --c-fg: var(--minus); }
   .add, .del { color: var(--c-fg); }
-  .legend { font-size: 12px; color: var(--muted); }
+  .legend { font-size: 12px; gap: 6px; }
   .legend li { display: flex; }
-  .legend button { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; color: inherit; cursor: pointer; }
-  .legend button:hover { background: var(--sunken); }
-  .legend button[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
-  .legend button[aria-pressed="false"] .swatch { background: transparent; }
+  /* each item is a chip in its own status colours (same pairs as the boxes); off = outline only */
+  .legend button { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--c-bd); background: var(--c-bg); color: var(--c-fg); font-weight: 500; transition: background-color .15s, opacity .15s; }
+  .legend button:hover { filter: brightness(1.08); }
+  .legend button[aria-pressed="false"] { background: transparent; color: var(--muted); border-color: var(--border); border-style: dashed; }
+  .legend button[aria-pressed="false"] .swatch { background: transparent; border-color: var(--muted); }
+  .legend .context button { border-style: dashed; }
   .gone { display: none; }
-  .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid var(--c-bd); background: var(--c-bg); }
-  .context .swatch { border-style: dashed; }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--c-bd); }
   .grow { flex: 1; }
   .check { display: flex; align-items: center; gap: 6px; min-height: 32px; font-size: 12px; color: var(--muted); }
   .btn { min-height: 32px; min-width: 32px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; transition: background-color .15s, border-color .15s; }
@@ -126,7 +127,7 @@
     #resize { display: none; }
     aside { border-left: 0; border-top: 1px solid var(--border); }
   }
-  @media (pointer: coarse) { .btn { min-height: 44px; min-width: 44px; } .link, .frow, .check { min-height: 44px; align-items: center; } .files input { min-height: 44px; font-size: 16px; } }
+  @media (pointer: coarse) { .legend button { min-height: 44px; } .btn { min-height: 44px; min-width: 44px; } .link, .frow, .check { min-height: 44px; align-items: center; } .files input { min-height: 44px; font-size: 16px; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style></head>
 <body>
