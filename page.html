@@ -339,6 +339,16 @@ function setScale(s) {
 }
 // never fit below 55%: smaller than that the text is unreadable, so a big diagram scrolls instead
 const fit = () => setScale(Math.max(.55, Math.min(1, (graph.clientWidth - 32) / base.w, (graph.clientHeight - 32) / base.h)));
+// trackpad pinch arrives as a wheel event with ctrlKey set; Alt + wheel is the mouse way. Zoom around the pointer.
+graph.addEventListener('wheel', e => {
+  if (!svg || !(e.ctrlKey || e.altKey)) return;
+  e.preventDefault();
+  const r = graph.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const px = graph.scrollLeft + x, py = graph.scrollTop + y, was = scale;
+  setScale(scale * Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .002)));
+  graph.scrollLeft = px * scale / was - x;
+  graph.scrollTop = py * scale / was - y;
+}, { passive: false });
 $('zin').onclick = () => setScale(scale * 1.25);
 $('zout').onclick = () => setScale(scale / 1.25);
 $('zfit').onclick = () => svg && fit();
