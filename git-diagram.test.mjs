@@ -45,6 +45,12 @@ test('parseDiff handles spaces in paths (trailing tab, mode-only change)', () =>
   assert.deepEqual([b.path, b.oldPath], ['p q.sh', 'p q.sh']);
 });
 
+test('parseDiff reads a Buffer and caps huge diffs', () => {
+  const [f] = parseDiff(Buffer.from('diff --git a/big.txt b/big.txt\nnew file mode 100644\n@@ -0,0 +1,6000 @@\n' + '+x\n'.repeat(6000)));
+  assert.deepEqual([f.status, f.add, f.diff.length], ['added', 6000, 5001]);
+  assert.match(f.diff.at(-1), /more lines not shown/);
+});
+
 test('parseImports handles JS/TS and Python forms', () => {
   assert.deepEqual(parseImports('a.ts', `import React, { useState as s } from 'react';
 import type { User } from "./types";

@@ -21,6 +21,11 @@ const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 const MAX_FILE_SIZE = 1e6; // bytes. Bigger files are not scanned for imports.
 
+// Per file, only this many diff lines go into the page (the +/- counts still cover all of them),
+// and each line is cut at MAX_LINE_LENGTH characters. Keeps huge diffs from blowing up the page.
+const MAX_DIFF_LINES = 5000;
+const MAX_LINE_LENGTH = 2000;
+
 // Only these files are scanned for imports: JavaScript, TypeScript, Python.
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|py)$/;
 
@@ -52,12 +57,14 @@ const JS_SUFFIXES = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '
 //   add/del: number of added / removed lines
 //   symbols: names of functions, classes... that the change touches
 //   diff:    the hunk lines (@@ headers, context, + and - lines) shown in the side panel
+//   cut:     (internal) diff lines left out of `diff` because the file's diff is huge
+// Takes a string or, for diffs too big for one string, a Buffer.
 export function parseDiff(diffText) {
   const files = [];
   let file;            // the file whose section we are reading right now
   let inHunk = false;  // true once we are past the file's header lines
 
-  for (const line of diffText.split('\n')) {
+  for (const line of splitLines(diffText)) {
     if (line.startsWith('diff --git ')) {
       file = startFile(line);
       files.push(file);
@@ -70,7 +77,7 @@ export function parseDiff(diffText) {
       // after the closing @@ git prints the function the hunk sits in
       addSymbol(file, line.replace(/^@@[^@]*@@ ?/, ''));
     } else if (inHunk) {
-      file.diff.push(line);
+      if (file.diff.length < MAX_DIFF_LINES) file.diff.push(line); else file.cut++;
       const sign = line[0];
       if (sign === '+' || sign === '-') {
         if (sign === '+') file.add++; else file.del++;
@@ -80,7 +87,20 @@ export function parseDiff(diffText) {
       readHeaderLine(file, line);
     }
   }
-  return files.map(f => ({ ...f, symbols: [...f.symbols] }));
+  for (const f of files) if (f.cut) f.diff.push(`@@ ${f.cut} more lines not shown: this file's diff is too big for the page @@`);
+  return files.map(({ cut, ...f }) => ({ ...f, symbols: [...f.symbols] }));
+}
+
+// Lines of a string or Buffer. A Buffer is decoded one line at a time, because a diff can be
+// bigger than the longest string JavaScript allows (about 512 MB).
+function* splitLines(text) {
+  if (typeof text === 'string') { for (const line of text.split('\n')) yield line.slice(0, MAX_LINE_LENGTH); return; }
+  for (let start = 0; start < text.length;) {
+    let end = text.indexOf(10, start);
+    if (end < 0) end = text.length;
+    yield text.toString('utf8', start, Math.min(end, start + MAX_LINE_LENGTH));
+    start = end + 1;
+  }
 }
 
 function startFile(headerLine) {
@@ -88,7 +108,7 @@ function startFile(headerLine) {
   // matching that way also copes with spaces in the path. A rename is corrected later from
   // the `rename from` / `rename to` lines.
   const m = headerLine.match(/^diff --git a\/(.+) b\/\1$/) ?? headerLine.match(/^diff --git a\/(.*) b\/(.*)$/);
-  return { path: m?.[2] ?? m?.[1] ?? '', oldPath: m?.[1] ?? '', status: 'modified', add: 0, del: 0, symbols: new Set(), diff: [] };
+  return { path: m?.[2] ?? m?.[1] ?? '', oldPath: m?.[1] ?? '', status: 'modified', add: 0, del: 0, symbols: new Set(), diff: [], cut: 0 };
 }
 
 // The lines between `diff --git` and the first `@@`: status, rename info, paths.
@@ -254,8 +274,9 @@ function arrowLabel(edge) {
 // Finds the repo and returns a helper for running git inside it.
 function openRepo() {
   const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-  const run = (args, env) => execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
-    cwd: root, env, encoding: 'utf8', maxBuffer: 1 << 30, stdio: ['ignore', 'pipe', 'inherit'],
+  // encoding 'buffer' returns raw bytes, for output that may not fit in one string (the diff)
+  const run = (args, env, encoding = 'utf8') => execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
+    cwd: root, env, encoding, maxBuffer: Infinity, stdio: ['ignore', 'pipe', 'inherit'],
   });
   const gitDir = run(['rev-parse', '--absolute-git-dir']).trim();
   return { root, gitDir, run };
@@ -265,7 +286,7 @@ const DIFF_FLAGS = ['diff', '--no-color', '--no-ext-diff', '-M']; // -M: detect 
 
 // With arguments, they go straight to `git diff`. Without, we diff everything not committed yet.
 function getDiffText(repo, args) {
-  return args.length ? repo.run([...DIFF_FLAGS, ...args]) : diffEverythingUncommitted(repo);
+  return args.length ? repo.run([...DIFF_FLAGS, ...args], undefined, 'buffer') : diffEverythingUncommitted(repo);
 }
 
 // A plain `git diff HEAD` skips new (untracked) files, and git cannot pair a renamed
@@ -279,7 +300,7 @@ function diffEverythingUncommitted({ root, gitDir, run }) {
     execFileSync('git', ['add', '-A'], { cwd: root, env, stdio: 'ignore' });
     let base = EMPTY_TREE;
     try { base = run(['rev-parse', '--verify', '-q', 'HEAD']).trim(); } catch { /* repo has no commits yet */ }
-    return run([...DIFF_FLAGS, '--cached', base], env);
+    return run([...DIFF_FLAGS, '--cached', base], env, 'buffer');
   } finally {
     rmSync(tempIndex, { force: true });
   }
