@@ -4,7 +4,7 @@ import { parseDiff, toMermaid, parseArgs, excludePathspecs } from './git-diagram
 import { buildGraph, resolve, parseJsonc } from './lib/graph.mjs';
 import { loadGrammars, parseFile } from './lib/parse.mjs';
 
-await loadGrammars(new Set(['js', 'python', 'jvm']));
+await loadGrammars(new Set(['js', 'python', 'jvm', 'dotnet', 'go']));
 const importsOf = (path, source) => parseFile(path, source).imports.map(({ spec, names }) => ({ spec, names }));
 const ctxFor = (files, sources = {}) => ({ repoFiles: new Set(files), readFile: p => sources[p] ?? null, tsconfigs: new Map() });
 
@@ -169,5 +169,64 @@ test('Java and Kotlin: imports, same package, and Spring injection', async () =>
     'PaymentGateway -> OrderController: PaymentGateway',
     'PaymentGateway -> SlowPay: PaymentGateway',
     'SlowPay -> OrderController: SlowPay (injected)',
+  ]);
+});
+
+const edgeList = async files => {
+  const edges = await buildGraph(Object.keys(files).map(path => ({ path })), new Set(Object.keys(files)), p => files[p]);
+  const short = p => p.split('/').pop().replace(/\.\w+$/, '');
+  return edges.map(e => `${short(e.from)} -> ${short(e.to)}: ${e.names.sort().join(', ')}`).sort();
+};
+
+test('C#: usings, global usings, enclosing namespaces, aliases and registered injection', async () => {
+  assert.deepEqual(await edgeList({
+    'Core/Order.cs': 'namespace Shop.Core;\npublic record Order(int Id);',
+    'Core/IPayment.cs': 'namespace Shop.Core { public interface IPayment {} }',
+    'Payments/CardPayment.cs': 'using Shop.Core;\nnamespace Shop.Payments;\npublic class CardPayment : IPayment {}',
+    'Payments/CashPayment.cs': 'using Shop.Core;\nnamespace Shop.Payments;\nclass CashPayment : IPayment {}',
+    'Data/OrderRepository.cs': 'namespace Shop.Data { public static class OrderRepository { public static Order Find(int id) => null; } }',
+    'Web/GlobalUsings.cs': 'global using Shop.Core;',
+    'Web/Helpers.cs': 'namespace Shop { static class Helpers { public static void Log() {} } }',
+    'Web/Program.cs': 'using Shop.Payments;\nvar builder = WebApplication.CreateBuilder(args);\nbuilder.Services.AddScoped<IPayment, CardPayment>();',
+    'Web/OrdersController.cs': `using Repo = Shop.Data.OrderRepository;
+namespace Shop.Web.Controllers;
+// Unused in a comment does not count
+[ApiController]
+public class OrdersController(IPayment pay) : ControllerBase {
+  public Order Get(int id) { Helpers.Log(); return Repo.Find(id); }
+}`,
+  }), [
+    'CardPayment -> OrdersController: CardPayment (injected)',
+    'CardPayment -> Program: CardPayment',
+    'Helpers -> OrdersController: Helpers',
+    'IPayment -> CardPayment: IPayment',
+    'IPayment -> CashPayment: IPayment',
+    'IPayment -> OrdersController: IPayment',
+    'IPayment -> Program: IPayment',
+    'Order -> OrderRepository: Order',
+    'Order -> OrdersController: Order',
+    'OrderRepository -> OrdersController: Repo',
+  ]);
+});
+
+test('Go: packages by folder via go.mod, only the files that declare what is used', async () => {
+  assert.deepEqual(await edgeList({
+    'go.mod': 'module example.com/shop\n\ngo 1.22\n',
+    'store/store.go': 'package store\n\ntype Store struct{}\n\nfunc New() *Store { return &Store{} }\n',
+    'store/cache.go': 'package store\n\nvar Cache = map[string]int{}\n\nfunc init() {}\n',
+    'store/db.go': 'package store\n\nfunc init() { Cache["a"] = 1 }\n',
+    'store/store_test.go': 'package store\n\nimport "testing"\n\nfunc TestNew(t *testing.T) { New() }\n',
+    'model/order.go': 'package model\n\ntype Order struct{ ID int }\n',
+    'web/handler.go': 'package web\n\nimport (\n\t"fmt"\n\tdb "example.com/shop/store"\n\t"example.com/shop/model"\n)\n\ntype Handler struct{ s *db.Store }\n\nfunc (h *Handler) Get() model.Order { fmt.Println(); return model.Order{} }\n',
+    'web/routes.go': 'package web\n\nfunc Routes() *Handler { return &Handler{} }\n',
+    'cmd/main.go': 'package main\n\nimport (\n\t_ "example.com/shop/model"\n\t"example.com/shop/web"\n)\n\nfunc main() { web.Routes() }\n',
+  }), [
+    'cache -> db: Cache',
+    'handler -> routes: Handler',
+    'order -> handler: model.Order',
+    'order -> main: ',
+    'routes -> main: web.Routes',
+    'store -> handler: db.Store',
+    'store -> store_test: New',
   ]);
 });

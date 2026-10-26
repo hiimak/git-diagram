@@ -29,8 +29,9 @@ const MAX_DIFF_LINES = 5000;
 const MAX_LINE_LENGTH = 2000;
 
 // A line that declares something with a name, like `export async function load`, `class User`,
-// `def run`, `const total =`, `public final class Order` or `data class Item`. Captures the name.
-const DECLARATION = /^\s*(?:(?:export|default|async|public|private|protected|internal|static|final|abstract|sealed|open|data|enum|inner|value|override|suspend)\s+)*(?:function\*?|class|interface|record|object|type|enum|def|func|fun|const|let|var|val)\s+([A-Za-z_$][\w$]*)/;
+// `def run`, `const total =`, `public final class Order`, `data class Item` or Go's
+// `func (s *Store) Save` (the receiver is skipped). Captures the name.
+const DECLARATION = /^\s*(?:(?:export|default|async|public|private|protected|internal|static|final|abstract|sealed|open|data|enum|inner|value|override|suspend|partial|readonly|virtual|unsafe)\s+)*(?:function\*?|class|interface|record|struct|object|type|enum|def|func|fun|const|let|var|val)\s+(?:\([^)]*\)\s*)?([A-Za-z_$][\w$]*)/;
 
 // ---------------------------------------------------------------------------------------
 // Step 2: read the diff
