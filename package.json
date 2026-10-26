@@ -1,6 +1,6 @@
 {
   "name": "@hiimak/git-diagram",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "git diagram: see an AI-sized diff as a connected file diagram instead of reading it line by line",
   "type": "module",
   "bin": {
