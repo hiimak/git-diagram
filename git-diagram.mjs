@@ -12,7 +12,7 @@
 //   5. renderPage    put everything into page.html, write it, open it in the browser
 
 import { execFileSync, spawn } from 'node:child_process';
-import { copyFileSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -338,6 +338,8 @@ function main() {
 }
 
 // Run main() only when started as a command, not when the tests import this file.
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+// realpath: on Linux/macOS npm installs the command as a symlink to this file.
+const startedAs = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : '';
+if (import.meta.url === startedAs) {
   try { main(); } catch (e) { if (e.status) process.exit(e.status); throw e; }
 }
