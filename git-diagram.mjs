@@ -332,7 +332,9 @@ function main() {
   const out = join(repo.gitDir, 'git-diagram.html');
   writeFileSync(out, html);
   openInBrowser(out);
-  console.log(`${files.length} changed files, ${edges.length} connections -> ${out}`);
+  // a file:// URL is clickable in most terminals, unlike a bare Windows path
+  console.log(`git diagram: ${files.length} changed files, ${edges.length} connections`);
+  console.log(`Opening it in your browser. If nothing opens, follow this link:\n  ${pathToFileURL(out).href}`);
 }
 
 // Run main() only when started as a command, not when the tests import this file.

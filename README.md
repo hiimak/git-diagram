@@ -76,6 +76,14 @@ git diagram main...HEAD      # everything on this branch since it left main
 git diagram v1.2.0 v1.3.0    # between two tags
 ```
 
+It prints where the page is, so you can open it yourself if no browser pops up (for example over SSH):
+
+```text
+git diagram: 4 changed files, 4 connections
+Opening it in your browser. If nothing opens, follow this link:
+  file:///home/you/project/.git/git-diagram.html
+```
+
 Anything you pass is handed to `git diff`, so any range that works there works here. Your index and files are never modified.
 
 ## Reading the diagram
