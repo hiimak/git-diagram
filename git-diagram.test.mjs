@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDiff, parseImports, resolve, buildGraph, toMermaid } from './git-diagram.mjs';
+import { parseDiff, parseImports, resolve, buildGraph, toMermaid, parseArgs, excludePathspecs } from './git-diagram.mjs';
 
 const DIFF = `diff --git a/src/api.ts b/src/api.ts
 index 1111111..2222222 100644
@@ -94,4 +94,11 @@ test('toMermaid escapes file content', () => {
   const m = toMermaid([{ path: 'x/<b>"#.ts', status: 'added', add: 1, del: 0, symbols: [] }], []);
   assert.match(m, /#60;b#62;#34;#35;\.ts/);
   assert.doesNotMatch(m, /<b>"/);
+});
+
+test('parseArgs splits -i / --ignore from git diff arguments', () => {
+  assert.deepEqual(parseArgs(['-i', '*.lock', 'main...HEAD', '--ignore=dist', '--', 'src']),
+    { ignore: ['*.lock', 'dist'], gitArgs: ['main...HEAD', '--', 'src'] });
+  assert.deepEqual(excludePathspecs(['*.lock', 'src/gen/']),
+    [':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.lock/**', ':(exclude,glob)src/gen', ':(exclude,glob)src/gen/**']);
 });

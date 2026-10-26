@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// git diagram [<git diff arguments>]
+// git diagram [-i <pattern>]... [<git diff arguments>]
+//   -i, --ignore <pattern>   leave out matching files, like .gitignore: `-i dist -i '*.lock' -i 'src/**/*.gen.ts'`
 //
 // Shows a git diff as a diagram in the browser: one box per changed file, arrows for
 // "this file imports that file" (data flow), and a click on a box shows that file's diff.
@@ -284,23 +285,49 @@ function openRepo() {
 
 const DIFF_FLAGS = ['diff', '--no-color', '--no-ext-diff', '-M']; // -M: detect renames
 
+// Splits the command line into our own -i / --ignore patterns and the rest, which goes to `git diff`.
+export function parseArgs(argv) {
+  const ignore = [], gitArgs = [];
+  for (let k = 0; k < argv.length; k++) {
+    const arg = argv[k];
+    if (arg === '--') { gitArgs.push(...argv.slice(k)); break; }
+    if (arg === '-i' || arg === '--ignore') ignore.push(argv[++k] ?? '');
+    else if (arg.startsWith('--ignore=')) ignore.push(arg.slice('--ignore='.length));
+    else gitArgs.push(arg);
+  }
+  return { ignore: ignore.filter(Boolean), gitArgs };
+}
+
+// Turns ignore patterns into git "exclude" pathspecs with .gitignore-like meaning: a pattern
+// without a slash matches at any depth (`*.lock`, `node_modules`), and a matched folder
+// takes everything inside it along.
+export function excludePathspecs(patterns) {
+  return patterns.flatMap(pattern => {
+    const base = pattern.includes('/') ? pattern.replace(/^\/|\/$/g, '') : '**/' + pattern;
+    return [`:(exclude,glob)${base}`, `:(exclude,glob)${base}/**`];
+  });
+}
+
 // With arguments, they go straight to `git diff`. Without, we diff everything not committed yet.
-function getDiffText(repo, args) {
-  return args.length ? repo.run([...DIFF_FLAGS, ...args], undefined, 'buffer') : diffEverythingUncommitted(repo);
+// `excludes` (pathspecs) go last, after a `--` if the arguments have none.
+function getDiffText(repo, args, excludes) {
+  if (!args.length) return diffEverythingUncommitted(repo, excludes);
+  const paths = args.includes('--') ? excludes : excludes.length ? ['--', ...excludes] : [];
+  return repo.run([...DIFF_FLAGS, ...args, ...paths], undefined, 'buffer');
 }
 
 // A plain `git diff HEAD` skips new (untracked) files, and git cannot pair a renamed
 // untracked file with its old name. So we stage everything into a throwaway copy of the
 // index and diff that. Your real index and files are never touched.
-function diffEverythingUncommitted({ root, gitDir, run }) {
+function diffEverythingUncommitted({ root, gitDir, run }, excludes) {
   const tempIndex = join(gitDir, 'git-diagram.index');
   const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
   try { copyFileSync(join(gitDir, 'index'), tempIndex); } catch { /* no index yet: start empty */ }
   try {
-    execFileSync('git', ['add', '-A'], { cwd: root, env, stdio: 'ignore' });
+    execFileSync('git', ['add', '-A', '--', ...excludes], { cwd: root, env, stdio: 'ignore' }); // ignored files are never even read
     let base = EMPTY_TREE;
     try { base = run(['rev-parse', '--verify', '-q', 'HEAD']).trim(); } catch { /* repo has no commits yet */ }
-    return run([...DIFF_FLAGS, '--cached', base], env, 'buffer');
+    return run([...DIFF_FLAGS, '--cached', base, '--', ...excludes], env, 'buffer');
   } finally {
     rmSync(tempIndex, { force: true });
   }
@@ -320,15 +347,16 @@ function openInBrowser(file) {
 }
 
 function main() {
-  const args = process.argv.slice(2);
+  const { ignore, gitArgs: args } = parseArgs(process.argv.slice(2));
+  const excludes = excludePathspecs(ignore);
   const repo = openRepo();
 
-  const files = parseDiff(getDiffText(repo, args));
+  const files = parseDiff(getDiffText(repo, args, excludes));
   if (!files.length) return console.log('No changes.');
 
   // Arrows. Imports are read from the working tree.
   // shortcut: so for an old commit range they reflect today's code, not the code of that time
-  const repoFiles = new Set([...repo.run(['ls-files', '-z']).split('\0').filter(Boolean), ...files.map(f => f.path)]);
+  const repoFiles = new Set([...repo.run(['ls-files', '-z', '--', ...excludes]).split('\0').filter(Boolean), ...files.map(f => f.path)]);
   const readFile = path => {
     try {
       const full = join(repo.root, path);
@@ -348,7 +376,7 @@ function main() {
     edges,
     mermaid: toMermaid(nodes, edges),
     mermaidChanged: toMermaid(files, edges.filter(e => changedPaths.has(e.from) && changedPaths.has(e.to))), // same diagram without neighbours
-    range: args.join(' ') || 'uncommitted changes',
+    range: (args.join(' ') || 'uncommitted changes') + (ignore.length ? ` · ignoring ${ignore.join(' ')}` : ''),
   });
   const out = join(repo.gitDir, 'git-diagram.html');
   writeFileSync(out, html);

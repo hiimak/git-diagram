@@ -74,6 +74,7 @@ git diagram --cached         # only what is staged
 git diagram HEAD~3           # the last 3 commits plus what is uncommitted
 git diagram main...HEAD      # everything on this branch since it left main
 git diagram v1.2.0 v1.3.0    # between two tags
+git diagram -i dist -i '*.lock'   # leave out the dist folder and all lock files
 ```
 
 It prints where the page is, so you can open it yourself if no browser pops up (for example over SSH):
@@ -85,6 +86,19 @@ Opening it in your browser. If nothing opens, follow this link:
 ```
 
 Anything you pass is handed to `git diff`, so any range that works there works here. Your index and files are never modified.
+
+### Ignoring files
+
+`-i <pattern>` (or `--ignore <pattern>`) leaves matching files out completely. Repeat it for more patterns. Patterns work like `.gitignore`:
+
+| Pattern | Leaves out |
+| --- | --- |
+| `dist` | every file or folder named `dist`, at any depth, with everything inside it |
+| `'*.lock'` | every `.lock` file, at any depth |
+| `src/generated` | that one folder (a pattern with a `/` starts at the repository root) |
+| `'src/**/*.gen.ts'` | `.gen.ts` files anywhere under `src` (`**` spans folders) |
+
+Quote patterns with `*` so your shell does not expand them. Ignored files are never read, which also makes huge untracked folders fast to skip.
 
 ## Reading the diagram
 
@@ -100,7 +114,8 @@ Anything you pass is handed to `git diff`, so any range that works there works h
 - **Boxes** show the status, `+added −removed` lines, and the functions and classes the change touches.
 - **Folders** are the grouped lanes.
 - **Click a box** (or tap it, or press Enter on it) to see its diff with line numbers, what it gets data from, and what it feeds. The connected files stay bright and everything else dims.
-- **Files list** on the right: filter by name, jump to any file, step with ‹ ›. This is the quickest way in on a phone.
+- **Files list** on the right: jump to any file, step with ‹ ›. This is the quickest way in on a phone.
+- **Filter box** above the list hides files in the list and the diagram. Type space-separated terms: plain text matches anywhere in the path, `*` and `**` work like in `-i`, and `!` in front hides matches. Example: `src !*.spec.ts !generated`.
 - **Legend** items are filters: click added, modified, deleted, renamed or unchanged to hide or show that kind.
 - **Zoom** with the buttons, a trackpad pinch, or Alt + mouse wheel over the diagram. **Drag the divider** between diagram and side panel to resize it (desktop).
 - **Show unchanged neighbours** adds the grey boxes. It starts off on big diffs (over 40 boxes) to keep the picture readable.

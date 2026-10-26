@@ -157,7 +157,7 @@
   </div>
   <aside aria-label="Files and details">
     <details class="files" id="files" open><summary>Files (<span id="fcount"></span>)</summary>
-      <input type="search" id="filter" placeholder="Filter files" aria-label="Filter files"><ul id="list"></ul></details>
+      <input type="search" id="filter" placeholder="Filter: api  *.ts  !*.spec.ts" aria-label="Filter files. Wildcards * and **; start a term with ! to hide matches." title="Space-separated terms. * and ** wildcards. !term hides matching files, e.g. !*.lock !dist"><ul id="list"></ul></details>
     <div id="panel"></div>
   </aside>
   <div id="resize" role="separator" aria-orientation="vertical" aria-label="Resize side panel" tabindex="0"></div>
@@ -196,7 +196,22 @@ let current = -1, svg, base, scale = 1;
 let showCtx = nodes.length <= 40; // big diagrams start without the grey neighbours
 const el = (tag, text, cls) => Object.assign(document.createElement(tag), { textContent: text ?? '', className: cls ?? '' });
 const off = new Set(); // statuses switched off in the legend
-const shown = n => n.status === 'context' ? showCtx : !off.has(n.status);
+// filter box: space-separated terms; a file must match one plain term and no !term.
+// A term without * or ? matches anywhere in the path; with them it works like -i / .gitignore:
+// `*.lock` = any .lock file at any depth, `src/**/*.gen.ts`, `dist*` = files and folders named dist…
+let want = [], drop = [];
+const GLOB = { '**/': '(.*/)?', '**': '.*', '*': '[^/]*', '?': '[^/]' };
+const term = t => /[*?]/.test(t)
+  ? new RegExp('(^|/)' + t.replace(/^\/|\/$/g, '').replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*\*\/|\*\*|\*|\?/g, m => GLOB[m]) + '($|/)', 'i')
+  : { test: path => path.toLowerCase().includes(t.toLowerCase()) };
+function readFilter() {
+  const terms = filter.value.trim().split(/\s+/).filter(t => t && t !== '!');
+  want = terms.filter(t => t[0] !== '!').map(term);
+  drop = terms.filter(t => t[0] === '!').map(t => term(t.slice(1)));
+}
+const matches = n => (!want.length || want.some(r => r.test(n.path))) && !drop.some(r => r.test(n.path));
+const shown = n => (n.status === 'context' ? showCtx : !off.has(n.status)) && matches(n);
 const visible = () => nodes.map((_, i) => i).filter(i => shown(nodes[i]));
 
 // header
@@ -224,18 +239,19 @@ const rows = nodes.map((n, i) => {
   return li;
 });
 function filterList() {
-  const q = filter.value.trim().toLowerCase();
-  rows.forEach((li, i) => { li.hidden = (q && !nodes[i].path.toLowerCase().includes(q)) || !shown(nodes[i]); });
+  rows.forEach((li, i) => { li.hidden = !shown(nodes[i]); });
 }
-filter.oninput = filterList;
+filter.oninput = () => { readFilter(); applyFilter(); };
 ctx.checked = showCtx;
 document.querySelector('.legend .context button').setAttribute('aria-pressed', showCtx);
 $('ctxn').textContent = nCtx;
 $('ctxlabel').hidden = !nCtx;
 filterList();
 
-// legend: click a status to hide / show it (the grey one is the neighbours checkbox)
+// hides boxes, arrows and list rows that the legend or the filter box leave out;
+// if the open file was hidden, the first one still shown opens instead
 function applyFilter() {
+  if (current >= 0 && !shown(nodes[current])) { const v = visible(); if (v.length) select(v[0], true); }
   boxes.forEach((box, i) => box.classList.toggle('gone', !shown(nodes[i])));
   svg?.querySelectorAll('path.flowchart-link').forEach(p => {
     const ends = [...p.classList].filter(c => /^L[SE]-n\d+$/.test(c)).map(c => nodes[+c.slice(4)]);
@@ -243,13 +259,13 @@ function applyFilter() {
   });
   filterList();
 }
+// legend: click a status to hide / show it (the grey one is the neighbours checkbox)
 document.querySelectorAll('.legend button').forEach(b => b.onclick = () => {
   const status = b.parentElement.className;
   if (status === 'context') return ctx.click();
   off.has(status) ? off.delete(status) : off.add(status);
   b.setAttribute('aria-pressed', !off.has(status));
   applyFilter();
-  if (!shown(nodes[current])) { const v = visible(); if (v.length) select(v[0], true); }
 });
 
 function link(path, glyph, via) {
