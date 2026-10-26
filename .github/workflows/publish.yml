@@ -1,9 +1,9 @@
 name: publish
-# Run it by hand: GitHub repo > Actions > publish > Run workflow. Needs the NPM_TOKEN secret.
+# Runs on a pushed version tag (npm version patch && git push --follow-tags), or by hand: Actions > publish > Run workflow. Needs the NPM_TOKEN secret.
 on:
   workflow_dispatch:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
 jobs:
   publish:
     runs-on: ubuntu-latest
