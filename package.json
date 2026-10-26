@@ -1,20 +1,23 @@
 {
   "name": "@hiimak/git-diagram",
   "version": "0.1.3",
-  "description": "git diagram: see an AI-sized diff as a connected file diagram instead of reading it line by line",
+  "description": "git diagram: see an AI-sized diff as a connected file diagram (JS/TS, Python, Java, Kotlin, Spring) instead of reading it line by line",
   "type": "module",
   "bin": {
     "git-diagram": "git-diagram.mjs"
   },
   "files": [
     "git-diagram.mjs",
-    "page.html"
+    "page.html",
+    "lib/",
+    "grammars/"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "grammars": "node scripts/grammars.mjs"
   },
   "keywords": [
     "git",
@@ -23,7 +26,13 @@
     "code-review",
     "ai",
     "visualization",
-    "pull-request"
+    "pull-request",
+    "tree-sitter",
+    "java",
+    "kotlin",
+    "spring",
+    "typescript",
+    "python"
   ],
   "repository": {
     "type": "git",
@@ -32,5 +41,8 @@
   "homepage": "https://github.com/hiimak/git-diagram#readme",
   "bugs": "https://github.com/hiimak/git-diagram/issues",
   "license": "MIT",
-  "author": "hiimak"
+  "author": "hiimak",
+  "dependencies": {
+    "web-tree-sitter": "0.27.1"
+  }
 }

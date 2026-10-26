@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDiff, parseImports, resolve, buildGraph, toMermaid, parseArgs, excludePathspecs } from './git-diagram.mjs';
+import { parseDiff, toMermaid, parseArgs, excludePathspecs } from './git-diagram.mjs';
+import { buildGraph, resolve, parseJsonc } from './lib/graph.mjs';
+import { loadGrammars, parseFile } from './lib/parse.mjs';
+
+await loadGrammars(new Set(['js', 'python', 'jvm']));
+const importsOf = (path, source) => parseFile(path, source).imports.map(({ spec, names }) => ({ spec, names }));
+const ctxFor = (files, sources = {}) => ({ repoFiles: new Set(files), readFile: p => sources[p] ?? null, tsconfigs: new Map() });
 
 const DIFF = `diff --git a/src/api.ts b/src/api.ts
 index 1111111..2222222 100644
@@ -51,8 +57,8 @@ test('parseDiff reads a Buffer and caps huge diffs', () => {
   assert.match(f.diff.at(-1), /more lines not shown/);
 });
 
-test('parseImports handles JS/TS and Python forms', () => {
-  assert.deepEqual(parseImports('a.ts', `import React, { useState as s } from 'react';
+test('imports are read for JS/TS and Python', () => {
+  assert.deepEqual(importsOf('a.ts', `import React, { useState as s } from 'react';
 import type { User } from "./types";
 export * from './all';
 import './side.css';
@@ -65,7 +71,7 @@ const y = await import('./lazy');`), [
     { spec: '../x', names: [] },
     { spec: './lazy', names: [] },
   ]);
-  assert.deepEqual(parseImports('p/m.py', 'import os, pkg.util as u\nfrom . import helpers\nfrom ..core.models import (User, Order)\n'), [
+  assert.deepEqual(importsOf('p/m.py', 'import os, pkg.util as u\nfrom . import helpers\nfrom ..core.models import (User, Order)\n'), [
     { spec: 'os', names: [] },
     { spec: 'pkg.util', names: [] },
     { spec: '.', names: ['helpers'] },
@@ -74,7 +80,7 @@ const y = await import('./lazy');`), [
 });
 
 test('resolve maps imports to repo files', () => {
-  const files = new Set(['src/db.ts', 'src/lib/index.tsx', 'src/esm.ts', 'app/core/models.py', 'app/web/helpers.py', 'app/web/__init__.py']);
+  const files = ctxFor(['src/db.ts', 'src/lib/index.tsx', 'src/esm.ts', 'app/core/models.py', 'app/web/helpers.py', 'app/web/__init__.py']);
   assert.deepEqual(resolve('src/api.ts', { spec: './db', names: [] }, files), ['src/db.ts']);
   assert.deepEqual(resolve('src/api.ts', { spec: './lib', names: [] }, files), ['src/lib/index.tsx']);
   assert.deepEqual(resolve('src/api.ts', { spec: './esm.js', names: [] }, files), ['src/esm.ts']);
@@ -84,9 +90,9 @@ test('resolve maps imports to repo files', () => {
   assert.deepEqual(resolve('main.py', { spec: 'app.core.models', names: [] }, files), ['app/core/models.py']);
 });
 
-test('buildGraph keeps only edges touching changed files, as data flow', () => {
+test('buildGraph keeps only edges touching changed files, as data flow', async () => {
   const src = { 'a.ts': "import { b } from './b'", 'b.ts': "import { c } from './c'", 'c.ts': '', 'z.ts': "import './c'" };
-  const edges = buildGraph([{ path: 'b.ts' }], new Set(Object.keys(src)), p => src[p]);
+  const edges = await buildGraph([{ path: 'b.ts' }], new Set(Object.keys(src)), p => src[p]);
   assert.deepEqual(edges, [{ from: 'b.ts', to: 'a.ts', names: ['b'] }, { from: 'c.ts', to: 'b.ts', names: ['c'] }]);
 });
 
@@ -101,4 +107,67 @@ test('parseArgs splits -i / --ignore from git diff arguments', () => {
     { ignore: ['*.lock', 'dist'], gitArgs: ['main...HEAD', '--', 'src'] });
   assert.deepEqual(excludePathspecs(['*.lock', 'src/gen/']),
     [':(exclude,glob)**/*.lock', ':(exclude,glob)**/*.lock/**', ':(exclude,glob)src/gen', ':(exclude,glob)src/gen/**']);
+});
+
+test('tsconfig paths and baseUrl resolve, with comments and extends', () => {
+  const sources = {
+    'tsconfig.base.json': '{ "compilerOptions": { "baseUrl": ".", /* shared */ "paths": { "@/*": ["src/*"], "@lib": ["libs/lib/index.ts"], } } }',
+    'tsconfig.json': '// root config\n{ "extends": "./tsconfig.base.json" }',
+    'apps/web/tsconfig.json': '{ "compilerOptions": { "paths": { "~/*": ["./src/*"] } } }',
+  };
+  const ctx = ctxFor(['src/core/api.ts', 'libs/lib/index.ts', 'shared/util.ts', 'apps/web/src/page.tsx', ...Object.keys(sources)], sources);
+  assert.deepEqual(resolve('src/app/x.ts', { spec: '@/core/api', names: [] }, ctx), ['src/core/api.ts']);
+  assert.deepEqual(resolve('src/app/x.ts', { spec: '@lib', names: [] }, ctx), ['libs/lib/index.ts']);
+  assert.deepEqual(resolve('src/app/x.ts', { spec: 'shared/util', names: [] }, ctx), ['shared/util.ts']);
+  assert.deepEqual(resolve('src/app/x.ts', { spec: 'react', names: [] }, ctx), []);
+  assert.deepEqual(resolve('apps/web/src/a/b.ts', { spec: '~/page', names: [] }, ctx), ['apps/web/src/page.tsx']);
+  assert.deepEqual(parseJsonc('{ "a": "http://x/*y*/", // c\n "b": [1,], }'), { a: 'http://x/*y*/', b: [1] });
+});
+
+// A small Spring shop: interfaces with one and with two implementations, @Primary, @Qualifier,
+// Lombok constructor injection, same-package use without import, @Bean, and Kotlin calling Java.
+const SHOP = {
+  'src/main/java/com/shop/service/OrderService.java': 'package com.shop.service;\npublic interface OrderService { void place(); }',
+  'src/main/java/com/shop/service/OrderServiceImpl.java': 'package com.shop.service;\n@Service\npublic class OrderServiceImpl implements OrderService { public void place() {} }',
+  'src/main/java/com/shop/pay/PaymentGateway.java': 'package com.shop.pay;\npublic interface PaymentGateway {}',
+  'src/main/java/com/shop/pay/FastPay.java': 'package com.shop.pay;\n@Service("fast")\nclass FastPay implements PaymentGateway {}',
+  'src/main/java/com/shop/pay/SlowPay.java': 'package com.shop.pay;\n@Primary @Service\nclass SlowPay implements PaymentGateway {}',
+  'src/main/java/com/shop/web/OrderController.java': `package com.shop.web;
+import com.shop.service.*;
+import com.shop.pay.PaymentGateway;
+// a comment naming Unused must not count
+@RestController @RequiredArgsConstructor
+public class OrderController {
+  private final OrderService orders;
+  private final PaymentGateway defaultGateway;
+  @Autowired @Qualifier("fast") private PaymentGateway fast;
+  OrderDto get() { String s = "Unused"; return new OrderDto(); }
+}`,
+  'src/main/java/com/shop/web/OrderDto.java': 'package com.shop.web;\npublic record OrderDto() {}',
+  'src/main/java/com/shop/web/Unused.java': 'package com.shop.web;\nclass Unused {}',
+  'src/main/java/com/shop/time/Clock.java': 'package com.shop.time;\npublic interface Clock {}',
+  'src/main/java/com/shop/config/AppConfig.java': 'package com.shop.config;\nimport com.shop.time.Clock;\n@Configuration\npublic class AppConfig { @Bean Clock clock() { return null; } @Bean RestTemplate rest() { return null; } }',
+  'src/main/kotlin/com/shop/notify/Notifier.kt': 'package com.shop.notify\nimport com.shop.service.OrderService\nimport com.shop.time.Clock as Time\n@Service\nclass Notifier(private val orders: OrderService, private val time: Time, private val rest: RestTemplate)',
+};
+
+test('Java and Kotlin: imports, same package, and Spring injection', async () => {
+  const edges = await buildGraph(Object.keys(SHOP).map(path => ({ path })), new Set(Object.keys(SHOP)), p => SHOP[p]);
+  const short = p => p.split('/').pop().replace(/\.\w+$/, '');
+  const got = edges.map(e => `${short(e.from)} -> ${short(e.to)}: ${e.names.sort().join(', ')}`).sort();
+  assert.deepEqual(got, [
+    'AppConfig -> Notifier: AppConfig.clock() (@Bean), AppConfig.rest() (@Bean)',
+    'Clock -> AppConfig: Clock',
+    'Clock -> Notifier: Time',
+    'FastPay -> OrderController: FastPay (injected)',
+    'OrderDto -> OrderController: OrderDto',
+    'OrderService -> Notifier: OrderService',
+    'OrderService -> OrderController: OrderService',
+    'OrderService -> OrderServiceImpl: OrderService',
+    'OrderServiceImpl -> Notifier: OrderServiceImpl (injected)',
+    'OrderServiceImpl -> OrderController: OrderServiceImpl (injected)',
+    'PaymentGateway -> FastPay: PaymentGateway',
+    'PaymentGateway -> OrderController: PaymentGateway',
+    'PaymentGateway -> SlowPay: PaymentGateway',
+    'SlowPay -> OrderController: SlowPay (injected)',
+  ]);
 });

@@ -7,11 +7,9 @@ class GitDiagram < Formula
   depends_on "node"
 
   def install
-    libexec.install "git-diagram.mjs", "page.html"
-    (bin/"git-diagram").write <<~SH
-      #!/bin/sh
-      exec "#{Formula["node"].opt_bin}/node" "#{libexec}/git-diagram.mjs" "$@"
-    SH
+    # installs the package with its dependency (web-tree-sitter) and bundled grammars
+    system "npm", "install", *std_npm_args
+    bin.install_symlink libexec.glob("bin/*")
   end
 
   test do

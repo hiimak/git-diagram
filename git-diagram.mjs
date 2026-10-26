@@ -8,7 +8,7 @@
 // How it works, step by step (see main() at the bottom):
 //   1. getDiffText   ask git for the diff
 //   2. parseDiff     turn the diff text into a list of changed files
-//   3. buildGraph    find which files import which (the arrows)
+//   3. buildGraph    find which files use which, read with tree-sitter (lib/graph.mjs, lib/parse.mjs)
 //   4. toMermaid     turn files + arrows into diagram source text
 //   5. renderPage    put everything into page.html, write it, open it in the browser
 
@@ -16,37 +16,21 @@ import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { buildGraph } from './lib/graph.mjs';
 
 // git's hash for "an empty tree". Diffing against it shows every file as added.
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
-const MAX_FILE_SIZE = 1e6; // bytes. Bigger files are not scanned for imports.
+const MAX_FILE_SIZE = 1e6; // bytes. Bigger files are not read for imports.
 
 // Per file, only this many diff lines go into the page (the +/- counts still cover all of them),
 // and each line is cut at MAX_LINE_LENGTH characters. Keeps huge diffs from blowing up the page.
 const MAX_DIFF_LINES = 5000;
 const MAX_LINE_LENGTH = 2000;
 
-// Only these files are scanned for imports: JavaScript, TypeScript, Python.
-const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|py)$/;
-
-// A line that declares something with a name, like `export async function load`,
-// `class User`, `def run` or `const total =`. Captures the name.
-const DECLARATION = /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|class|interface|type|enum|def|func|const|let|var)\s+([A-Za-z_$][\w$]*)/;
-
-// JavaScript / TypeScript imports. Three forms, one regex:
-//   import { a, b } from './x'      and   export * from './x'   -> names = "{ a, b }", spec = "./x"
-//   import './x'                                                -> no names
-//   require('./x')   and   import('./x')                        -> spec only (third capture group)
-const JS_IMPORT = /\b(?:import|export)\s+(?:([\w$*\s{},]*?)\s*from\s*)?['"]([^'"\n]+)['"]|\b(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g;
-
-// Python imports, one regex with two shapes:
-//   from .pkg import a, b   -> module = ".pkg", names = "a, b"
-//   import pkg.mod, other   -> plain = "pkg.mod, other"
-const PY_IMPORT = /^[ \t]*(?:from[ \t]+(\.*[\w.]*)[ \t]+import[ \t]+\(?([^\n#)]*)|import[ \t]+([\w.][\w., \t]*))/gm;
-
-// What an import like './x' can point at: the file itself, with an extension, or a folder's index file.
-const JS_SUFFIXES = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '/index.ts', '/index.tsx', '/index.js', '/index.jsx', '/index.mjs'];
+// A line that declares something with a name, like `export async function load`, `class User`,
+// `def run`, `const total =`, `public final class Order` or `data class Item`. Captures the name.
+const DECLARATION = /^\s*(?:(?:export|default|async|public|private|protected|internal|static|final|abstract|sealed|open|data|enum|inner|value|override|suspend)\s+)*(?:function\*?|class|interface|record|object|type|enum|def|func|fun|const|let|var|val)\s+([A-Za-z_$][\w$]*)/;
 
 // ---------------------------------------------------------------------------------------
 // Step 2: read the diff
@@ -129,98 +113,6 @@ const stripTrailingTab = path => path.replace(/\t$/, '');
 function addSymbol(file, sourceLine) {
   const name = sourceLine.match(DECLARATION)?.[1];
   if (name) file.symbols.add(name);
-}
-
-// ---------------------------------------------------------------------------------------
-// Step 3: find the arrows (which file imports which)
-// ---------------------------------------------------------------------------------------
-
-// Lists the imports in one file as { spec, names }:
-//   spec:  what is written after `from` (for example './db' or '.models')
-//   names: the imported names (for example ['db', 'connect']); empty for `import './x'`
-export function parseImports(path, source) {
-  const imports = [];
-  if (path.endsWith('.py')) {
-    for (const [, fromModule, fromNames, plainModules] of source.matchAll(PY_IMPORT)) {
-      if (fromModule !== undefined) imports.push({ spec: fromModule, names: parseNameList(fromNames) });
-      else for (const module of parseNameList(plainModules)) imports.push({ spec: module, names: [] });
-    }
-  } else {
-    for (const [, names, spec, callSpec] of source.matchAll(JS_IMPORT)) {
-      imports.push({ spec: spec ?? callSpec, names: parseNameList(names) });
-    }
-  }
-  return imports;
-}
-
-// "{ a as b, type C }" -> ['a', 'C']
-function parseNameList(text) {
-  return (text || '').replace(/[{}()]/g, ' ').split(',')
-    .map(name => name.trim().split(/\s+as\s+/)[0].replace(/^type\s+/, '').trim())
-    .filter(Boolean);
-}
-
-// Finds the repo file(s) one import points at. `repoFiles` is the set of all file paths in the repo.
-// Returns [] for anything that is not a file in the repo (for example an npm package).
-export function resolve(importingFile, imp, repoFiles) {
-  const candidates = importingFile.endsWith('.py') ? pythonCandidates(importingFile, imp) : jsCandidates(importingFile, imp);
-  // Each candidate group lists alternative spellings of one possible target; take the first that exists.
-  return [...new Set(candidates.map(group => group.find(path => repoFiles.has(path))).filter(Boolean))];
-}
-
-function jsCandidates(importingFile, { spec }) {
-  // shortcut: bare packages and tsconfig path aliases are not followed
-  if (!spec.startsWith('.')) return [];
-  const base = posix.join(posix.dirname(importingFile), spec);
-  return [
-    JS_SUFFIXES.map(suffix => base + suffix),
-    // TypeScript code often imports './x.js' for a file that is really './x.ts'
-    JS_SUFFIXES.slice(1).map(suffix => base.replace(/\.[cm]?js$/, '') + suffix),
-  ];
-}
-
-function pythonCandidates(importingFile, { spec, names }) {
-  const dots = spec.match(/^\.*/)[0].length;          // leading dots of a relative import
-  const module = spec.slice(dots).replaceAll('.', '/');
-  const here = posix.dirname(importingFile);
-  // shortcut: absolute imports are only looked up from the repo root and src/; add more roots if a repo needs them
-  const roots = dots ? [posix.join(here, ...Array(dots - 1).fill('..'))] : ['', 'src'];
-
-  const candidates = [];
-  for (const root of roots) {
-    const base = posix.join(root, module);
-    candidates.push(module ? [base + '.py', base + '/__init__.py'] : [base + '/__init__.py']);
-    // `from pkg import name` may mean the submodule pkg/name.py
-    for (const name of names) candidates.push([posix.join(base, name) + '.py']);
-  }
-  return candidates;
-}
-
-// Builds the arrows: every import that involves at least one changed file.
-// Direction is data flow: from the imported file to the file that imports it.
-// `readFile(path)` returns a file's text, or null if it cannot be read.
-export function buildGraph(changedFiles, repoFiles, readFile) {
-  const changed = new Set(changedFiles.map(f => f.path));
-  const edges = new Map(); // one entry per (imported, importer) pair: { from, to, names }
-
-  for (const importer of repoFiles) {
-    if (!SOURCE_FILE.test(importer)) continue;
-    const source = readFile(importer);
-    if (source == null) continue;
-
-    for (const imp of parseImports(importer, source)) {
-      for (const imported of resolve(importer, imp, repoFiles)) {
-        const involvesChange = changed.has(importer) || changed.has(imported);
-        if (imported === importer || !involvesChange) continue;
-
-        const key = `${imported}\n${importer}`; // file paths never contain a newline
-        const edge = edges.get(key) ?? { from: imported, to: importer, names: new Set() };
-        imp.names.forEach(name => edge.names.add(name));
-        edges.set(key, edge);
-      }
-    }
-  }
-  return [...edges.values()].map(edge => ({ ...edge, names: [...edge.names] }));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -346,7 +238,7 @@ function openInBrowser(file) {
   spawn(command, args, { detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
 }
 
-function main() {
+async function main() {
   const { ignore, gitArgs: args } = parseArgs(process.argv.slice(2));
   const excludes = excludePathspecs(ignore);
   const repo = openRepo();
@@ -363,7 +255,7 @@ function main() {
       return statSync(full).size > MAX_FILE_SIZE ? null : readFileSync(full, 'utf8');
     } catch { return null; }
   };
-  const edges = buildGraph(files, repoFiles, readFile);
+  const edges = await buildGraph(files, repoFiles, readFile);
 
   // Unchanged files that an arrow touches are shown too (status 'context'), so you see what a change can affect.
   const changedPaths = new Set(files.map(f => f.path));
@@ -390,5 +282,5 @@ function main() {
 // realpath: on Linux/macOS npm installs the command as a symlink to this file.
 const startedAs = process.argv[1] ? pathToFileURL(realpathSync(process.argv[1])).href : '';
 if (import.meta.url === startedAs) {
-  try { main(); } catch (e) { if (e.status) process.exit(e.status); throw e; }
+  main().catch(e => { if (e.status) process.exit(e.status); console.error(e); process.exit(1); });
 }
