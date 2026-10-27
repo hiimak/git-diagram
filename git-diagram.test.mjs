@@ -43,6 +43,18 @@ test('parseDiff reads status, counts, symbols and paths', () => {
   assert.deepEqual([py.status, py.add, py.symbols], ['added', 2, [{ name: 'handler', kind: 'function' }]]);
   const [kinds] = parseDiff('diff --git a/x b/x\n@@ -1 +1 @@\n+public sealed class Order {\n+func (s *Store) Save() {\n+interface Repo {\n+data class Item(val id: Int)\n');
   assert.deepEqual(kinds.symbols.map(s => `${s.kind} ${s.name}`), ['class Order', 'function Save', 'interface Repo', 'class Item']);
+  // methods have no keyword: found by shape, while calls are not
+  const lines = {
+    'A.java': ['@Override public List<Owner> findAll(int page) {', 'public <T> T get(Class<T> type) {', 'public OwnerController(OwnerRepository owners) {', 'return owners.findAll(page);', 'throw new IllegalStateException("x");', 'else save(owner);'],
+    'B.cs': ['[HttpGet("{id}")] public async Task<IActionResult> Get(int id)', 'public BasketService(IRepository<Basket> repo,', 'return await _repo.ListAsync(spec);', 'Guard.Against.Null(basket, nameof(basket));', 'basket = new Basket(id);'],
+    'C.ts': ['async load(@Param() id: string): Promise<User> {', 'constructor(private readonly db: Db) {}', 'private save(', 'register?(options: any): Module;', "describe('x', () => {", "it('y', async function () {", 'if (ready) {', 'expect(', 'foo(x);'],
+  };
+  const found = Object.entries(lines).map(([path, ls]) => parseDiff(`diff --git a/${path} b/${path}\n@@ -1 +1 @@\n${ls.map(l => '+' + l).join('\n')}\n`)[0].symbols.map(s => `${s.kind} ${s.name}`));
+  assert.deepEqual(found, [
+    ['method findAll', 'method get', 'constructor OwnerController'],
+    ['method Get', 'constructor BasketService'],
+    ['method load', 'constructor constructor', 'method save', 'method register'],
+  ]);
   assert.deepEqual([old.path, old.status, old.del], ['old.js', 'deleted', 1]);
   assert.deepEqual([ren.oldPath, ren.path, ren.status, ren.diff], ['a b.txt', 'c d.txt', 'renamed', []]);
 });

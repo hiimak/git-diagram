@@ -36,6 +36,28 @@ const DECLARATION = /^\s*(?:(?:export|default|async|public|private|protected|int
 // keyword -> the kind shown in the box; types keep their own keyword (class, interface, enum...)
 const KIND = { function: 'function', def: 'function', func: 'function', fun: 'function', const: 'variable', let: 'variable', var: 'variable', val: 'variable' };
 
+// Methods have no keyword, so they are told apart from calls by their shape.
+// Java / C#: `@Override public Task<Order> save(`, `[HttpGet] public async Task<IActionResult> Get(`,
+// `public <T> List<T> all(`: a return type, then the name and `(`. Words that can stand before
+// a call (`return foo(`, `new Foo(`, `else bar(`) are not a return type.
+const MODIFIERS = 'public|private|protected|internal|static|final|abstract|override|virtual|async|synchronized|sealed|native|default|extern|new|unsafe|partial|readonly';
+const NOT_A_TYPE = `(?!(?:${MODIFIERS}|return|throw|else|await|yield|case|goto|assert|if|for|foreach|while|switch|catch|using|lock|in|is|as|var|let|const)\\b)`;
+const ANNOTATIONS = String.raw`(?:@[\w.]+(?:\([^)]*\))?\s+|\[[^\]]*\]\s*)*`;
+const TYPED_METHOD = new RegExp(String.raw`^\s*${ANNOTATIONS}(?:(?:${MODIFIERS})\s+)*(?:<[^()]*>\s+)?${NOT_A_TYPE}[\w.$]+(?:<[^()]*>)?(?:\[\])*\??\s+([A-Za-z_$][\w$]*)\s*(?:<[^()]*>\s*)?\(`);
+// Java / C# constructor: `public BasketService(`
+const CONSTRUCTOR = new RegExp(String.raw`^\s*${ANNOTATIONS}(?:(?:public|private|protected|internal)\s+)+([A-Z]\w*)\s*\(`);
+// TypeScript / JavaScript class method: `async load(@Body() id: string): Promise<User> {` on one
+// line, ending in `{` (or `{}`), so calls like `describe('x', () => {`, `it('x', function () {`
+// and `if (x) {` don't count. A parameter list that goes on over several lines only counts
+// after a modifier (`private save(`) or for `constructor(`, since `expect(` is a call.
+const TS_MODIFIERS = '(?:(?:public|private|protected|static|async|readonly|override|abstract|get|set)\\s+)';
+const NOT_A_METHOD = '(?!(?:if|for|while|switch|catch|function|return|with|else|await|new|typeof)\\b)';
+// (an interface's `save?(o: Order): void;` counts too: a call has no `: Type` before its `;`)
+const CLASS_METHOD = new RegExp(String.raw`^\s*${TS_MODIFIERS}*\*?${NOT_A_METHOD}([A-Za-z_$][\w$]*)\??\s*(?:<[^()]*>)?\((?!.*\bfunction\b)(?:[^()]|\([^()]*\))*\)(?:\s*(?::\s*[^={;]+)?\{\s*\}?|\s*:\s*[^={;]+;)\s*$`);
+const CLASS_METHOD_START = new RegExp(String.raw`^\s*(?:${TS_MODIFIERS}+\*?${NOT_A_METHOD}([A-Za-z_$][\w$]*)|(constructor))\s*(?:<[^()]*>)?\(\s*$`);
+const TYPED_LANGUAGES = new Set(['java', 'cs']);
+const JS_LANGUAGES = new Set(['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts']);
+
 // ---------------------------------------------------------------------------------------
 // Step 2: read the diff
 // ---------------------------------------------------------------------------------------
@@ -117,7 +139,13 @@ const stripTrailingTab = path => path.replace(/\t$/, '');
 
 function addSymbol(file, sourceLine) {
   const [, keyword, name] = sourceLine.match(DECLARATION) ?? [];
-  if (name && !file.symbols.has(name)) file.symbols.set(name, KIND[keyword] ?? keyword);
+  if (name) { if (!file.symbols.has(name)) file.symbols.set(name, KIND[keyword] ?? keyword); return; }
+  const ext = file.path.slice(file.path.lastIndexOf('.') + 1).toLowerCase();
+  const [kind, match] = TYPED_LANGUAGES.has(ext)
+    ? (sourceLine.match(CONSTRUCTOR) ? ['constructor', sourceLine.match(CONSTRUCTOR)] : ['method', sourceLine.match(TYPED_METHOD)])
+    : JS_LANGUAGES.has(ext) ? ['method', sourceLine.match(CLASS_METHOD) ?? sourceLine.match(CLASS_METHOD_START)] : [];
+  const found = match && (match[1] ?? match[2]);
+  if (found && !file.symbols.has(found)) file.symbols.set(found, found === 'constructor' ? 'constructor' : kind);
 }
 
 // ---------------------------------------------------------------------------------------
