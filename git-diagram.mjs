@@ -30,8 +30,11 @@ const MAX_LINE_LENGTH = 2000;
 
 // A line that declares something with a name, like `export async function load`, `class User`,
 // `def run`, `const total =`, `public final class Order`, `data class Item` or Go's
-// `func (s *Store) Save` (the receiver is skipped). Captures the name.
-const DECLARATION = /^\s*(?:(?:export|default|async|public|private|protected|internal|static|final|abstract|sealed|open|data|enum|inner|value|override|suspend|partial|readonly|virtual|unsafe)\s+)*(?:function\*?|class|interface|record|struct|object|type|enum|def|func|fun|const|let|var|val)\s+(?:\([^)]*\)\s*)?([A-Za-z_$][\w$]*)/;
+// `func (s *Store) Save` (the receiver is skipped). Captures the keyword and the name.
+const DECLARATION = /^\s*(?:(?:export|default|async|public|private|protected|internal|static|final|abstract|sealed|open|data|enum|inner|value|override|suspend|partial|readonly|virtual|unsafe)\s+)*(function|class|interface|record|struct|object|type|enum|def|func|fun|const|let|var|val)\*?\s+(?:\([^)]*\)\s*)?([A-Za-z_$][\w$]*)/;
+
+// keyword -> the kind shown in the box; types keep their own keyword (class, interface, enum...)
+const KIND = { function: 'function', def: 'function', func: 'function', fun: 'function', const: 'variable', let: 'variable', var: 'variable', val: 'variable' };
 
 // ---------------------------------------------------------------------------------------
 // Step 2: read the diff
@@ -41,7 +44,8 @@ const DECLARATION = /^\s*(?:(?:export|default|async|public|private|protected|int
 //   { path, oldPath, status, add, del, symbols, diff }
 //   status:  'added' | 'modified' | 'deleted' | 'renamed'
 //   add/del: number of added / removed lines
-//   symbols: names of functions, classes... that the change touches
+//   symbols: functions, classes, variables... that the change touches, as [{ name, kind }]
+//            kind: 'function' | 'variable' | the type keyword ('class', 'interface', 'enum', ...)
 //   diff:    the hunk lines (@@ headers, context, + and - lines) shown in the side panel
 //   cut:     (internal) diff lines left out of `diff` because the file's diff is huge
 // Takes a string or, for diffs too big for one string, a Buffer.
@@ -74,7 +78,7 @@ export function parseDiff(diffText) {
     }
   }
   for (const f of files) if (f.cut) f.diff.push(`@@ ${f.cut} more lines not shown: this file's diff is too big for the page @@`);
-  return files.map(({ cut, ...f }) => ({ ...f, symbols: [...f.symbols] }));
+  return files.map(({ cut, ...f }) => ({ ...f, symbols: [...f.symbols].map(([name, kind]) => ({ name, kind })) }));
 }
 
 // Lines of a string or Buffer. A Buffer is decoded one line at a time, because a diff can be
@@ -94,7 +98,7 @@ function startFile(headerLine) {
   // matching that way also copes with spaces in the path. A rename is corrected later from
   // the `rename from` / `rename to` lines.
   const m = headerLine.match(/^diff --git a\/(.+) b\/\1$/) ?? headerLine.match(/^diff --git a\/(.*) b\/(.*)$/);
-  return { path: m?.[2] ?? m?.[1] ?? '', oldPath: m?.[1] ?? '', status: 'modified', add: 0, del: 0, symbols: new Set(), diff: [], cut: 0 };
+  return { path: m?.[2] ?? m?.[1] ?? '', oldPath: m?.[1] ?? '', status: 'modified', add: 0, del: 0, symbols: new Map(), diff: [], cut: 0 };
 }
 
 // The lines between `diff --git` and the first `@@`: status, rename info, paths.
@@ -112,8 +116,8 @@ function readHeaderLine(file, line) {
 const stripTrailingTab = path => path.replace(/\t$/, '');
 
 function addSymbol(file, sourceLine) {
-  const name = sourceLine.match(DECLARATION)?.[1];
-  if (name) file.symbols.add(name);
+  const [, keyword, name] = sourceLine.match(DECLARATION) ?? [];
+  if (name && !file.symbols.has(name)) file.symbols.set(name, KIND[keyword] ?? keyword);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -150,7 +154,7 @@ export function toMermaid(nodes, edges) {
 // The text inside a box: file name, status with line counts, then the touched symbols (max 6).
 function boxLabel(node) {
   const stats = node.status === 'context' ? 'unchanged' : `${node.status} · +${node.add} −${node.del}`;
-  const shown = node.symbols.slice(0, 6).map(name => '<br/>ƒ ' + escapeMermaid(name)).join('');
+  const shown = node.symbols.slice(0, 6).map(({ name, kind }) => `<br/><i>${escapeMermaid(kind)}</i> ${escapeMermaid(name)}`).join('');
   const hidden = node.symbols.length > 6 ? `<br/>… +${node.symbols.length - 6} more` : '';
   return `<b>${escapeMermaid(posix.basename(node.path))}</b><br/><small>${stats}</small>${shown}${hidden}`;
 }

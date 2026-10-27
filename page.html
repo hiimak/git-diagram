@@ -339,7 +339,7 @@ function select(i, reveal) {
   }
   if (n.symbols.length) {
     const chips = el('div', '', 'chips');
-    n.symbols.forEach(s => chips.append(el('span', s, 'chip')));
+    n.symbols.forEach(s => chips.append(el('span', `${s.kind} ${s.name}`, 'chip')));
     body.append(el('h2', 'Touched symbols'), chips);
   }
   if (n.status === 'context') body.append(el('p', 'Not changed. Shown because it is connected to a changed file.', 'muted'));

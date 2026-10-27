@@ -39,8 +39,10 @@ rename to c d.txt
 test('parseDiff reads status, counts, symbols and paths', () => {
   const [api, py, old, ren] = parseDiff(DIFF);
   assert.deepEqual([api.path, api.status, api.add, api.del], ['src/api.ts', 'modified', 1, 1]);
-  assert.deepEqual(api.symbols, ['load', 'fetchUser']);
-  assert.deepEqual([py.status, py.add, py.symbols], ['added', 2, ['handler']]);
+  assert.deepEqual(api.symbols, [{ name: 'load', kind: 'function' }, { name: 'fetchUser', kind: 'variable' }]);
+  assert.deepEqual([py.status, py.add, py.symbols], ['added', 2, [{ name: 'handler', kind: 'function' }]]);
+  const [kinds] = parseDiff('diff --git a/x b/x\n@@ -1 +1 @@\n+public sealed class Order {\n+func (s *Store) Save() {\n+interface Repo {\n+data class Item(val id: Int)\n');
+  assert.deepEqual(kinds.symbols.map(s => `${s.kind} ${s.name}`), ['class Order', 'function Save', 'interface Repo', 'class Item']);
   assert.deepEqual([old.path, old.status, old.del], ['old.js', 'deleted', 1]);
   assert.deepEqual([ren.oldPath, ren.path, ren.status, ren.diff], ['a b.txt', 'c d.txt', 'renamed', []]);
 });
