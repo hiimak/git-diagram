@@ -111,17 +111,51 @@ Quote patterns with `*` so your shell does not expand them. Ignored files are ne
 | Grey, dashed | not changed, but connected to a changed file |
 
 - **Arrows** point in the direction data flows: from the imported file to the file that uses it. The label shows what is imported.
-- **Boxes** show the status, `+added −removed` lines, and the functions and classes the change touches.
+- **Boxes** show the status, `+added −removed` lines, and what the change touches, each with its kind: `class`, `interface`, `function`, `method`, `constructor`, `variable` and so on.
 - **Folders** are the grouped lanes.
-- **Click a box** (or tap it, or press Enter on it) to see its diff with line numbers, what it gets data from, and what it feeds. The connected files stay bright and everything else dims.
-- **Files list** on the right: jump to any file, step with ‹ ›. This is the quickest way in on a phone.
-- **Filter box** above the list hides files in the list and the diagram. Type space-separated terms: plain text matches anywhere in the path, `*` and `**` work like in `-i`, and `!` in front hides matches. Example: `src !*.spec.ts !generated`.
-- **Legend** items are filters: click added, modified, deleted, renamed or unchanged to hide or show that kind.
-- **Zoom** with the buttons, a trackpad pinch, or Alt + mouse wheel over the diagram. **Drag the divider** between diagram and side panel to resize it (desktop).
-- **Show unchanged neighbours** adds the grey boxes. It starts off on big diffs (over 40 boxes) to keep the picture readable.
-- **Light and dark** follow your system; the button in the header flips it.
 
 ![The same diagram in light mode, with unchanged connected files shown as dashed boxes](docs/light.png)
+
+## Controls
+
+The page has the diagram on the left and a side panel on the right: the file list at the top, the selected file's details below it.
+
+### Moving around
+
+| To | Do this |
+| --- | --- |
+| Open a file | Click or tap its box, or press Enter / Space on a focused box. Clicking a row in the file list does the same. |
+| Go to the next / previous file | The ‹ › buttons at the top of the side panel. They follow the files that are currently shown, in list order. |
+| Jump to a connected file | Click an entry under **Gets data from** or **Feeds data to** in the side panel. |
+| Zoom in / out | Ctrl + mouse wheel over the diagram (zooms around the pointer), a trackpad pinch, or the − and + buttons. |
+| Fit the diagram to the window | The **Fit** button. Big diagrams stop at 55% so the text stays readable, and scroll instead. |
+| Scroll the diagram | Mouse wheel (Shift + wheel for sideways), trackpad, or the scroll bars. |
+| Resize the side panel | Drag the divider between diagram and panel, or focus it with Tab and use ← →. The width is remembered. |
+| Switch light / dark | The round button in the header. It starts from your system setting and is remembered. |
+
+When a file is open, its box is outlined, the files connected to it and their arrows stay bright, and everything else dims. The side panel shows its status, `+added −removed` counts, the old name if it was renamed, the files it gets data from and feeds data to (with the imported names), the touched symbols, and the diff with old and new line numbers.
+
+### Filtering
+
+Three filters hide files from the diagram and the file list at the same time. They combine: a file is shown only if every filter lets it through. If the open file gets hidden, the first file still shown opens instead.
+
+**Legend.** Each status in the header (added, modified, deleted, renamed, unchanged) is a toggle. Click it to hide or show that kind of file. A hidden kind shows as a dashed, greyed-out entry.
+
+**Show unchanged neighbours.** The checkbox adds or removes the grey dashed boxes: unchanged files that import, or are imported by, a changed file. It starts off on big diffs (over 40 boxes) to keep the picture readable. Clicking "unchanged" in the legend does the same.
+
+**Filter box** (above the file list). Type space-separated terms; matching is case-insensitive:
+
+| Term | Shows / hides |
+| --- | --- |
+| `api` | shows files with `api` anywhere in the path |
+| `api web` | shows files matching `api` **or** `web` |
+| `*.ts` | shows `.ts` files at any depth (`*` stays inside one folder name) |
+| `src/**/*.test.ts` | shows `.test.ts` files anywhere under `src` (`**` spans folders) |
+| `dist*` | shows files and folders whose name starts with `dist` |
+| `!*.lock` | hides every `.lock` file |
+| `src !*.spec.ts !generated` | shows files under `src`, except specs and anything with `generated` in the path |
+
+A term without `*` or `?` matches anywhere in the path. A term with them works like a `-i` pattern. A file is shown if it matches at least one plain term (or there are none) and no `!` term. To leave files out before the page is even built, use `-i` on the command line instead (see [Ignoring files](#ignoring-files)).
 
 ### Big diffs
 
