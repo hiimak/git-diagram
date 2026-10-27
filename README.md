@@ -129,7 +129,7 @@ The page has the diagram on the left and a side panel on the right: the file lis
 | Jump to a connected file | Click an entry under **Gets data from** or **Feeds data to** in the side panel. |
 | Zoom in / out | Ctrl + mouse wheel over the diagram (zooms around the pointer), a trackpad pinch, or the − and + buttons. |
 | Fit the diagram to the window | The **Fit** button. Big diagrams stop at 55% so the text stays readable, and scroll instead. |
-| Scroll the diagram | Mouse wheel (Shift + wheel for sideways), trackpad, or the scroll bars. |
+| Move the diagram around | Click and hold anywhere in the diagram, then drag. On a box it only drags once you move the mouse, so a plain click still opens the file. The mouse wheel (Shift + wheel for sideways), a trackpad, a finger or the scroll bars work too. |
 | Resize the side panel | Drag the divider between diagram and panel, or focus it with Tab and use ← →. The width is remembered. |
 | Switch light / dark | The round button in the header. It starts from your system setting and is remembered. |
 

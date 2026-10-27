@@ -4,6 +4,7 @@ All notable changes to `git diagram`. Versions follow [semantic versioning](http
 
 ## Unreleased
 
+- Click and hold to drag the diagram around with the mouse.
 - Zoom with Ctrl + mouse wheel instead of Alt + mouse wheel. One wheel notch now zooms as much as one press of the + button.
 - README: new "Controls" section covering navigation, zoom, the legend, the neighbours toggle and the filter box syntax.
 

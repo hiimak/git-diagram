@@ -59,6 +59,8 @@
   .pane { position: relative; min-height: 0; min-width: 0; }
   #graph { height: 100%; overflow: auto; padding: 16px; background: var(--bg) radial-gradient(var(--border) 1px, transparent 1px) 0 0 / 20px 20px; }
   #graph > svg { display: block; max-width: none; }
+  #graph { cursor: grab; }
+  #graph.panning, #graph.panning * { cursor: grabbing !important; user-select: none; }
   .zoom { position: absolute; top: 12px; right: 20px; display: flex; gap: 4px; z-index: 1; }
   aside { min-height: 0; overflow: auto; background: var(--surface); border-left: 1px solid var(--border); }
   .pad { padding: 16px; }
@@ -368,6 +370,29 @@ graph.addEventListener('wheel', e => {
   graph.scrollLeft = px * scale / was - x;
   graph.scrollTop = py * scale / was - y;
 }, { passive: false });
+// click and hold with the mouse to drag the diagram around. Touch already pans natively.
+// It only counts as a drag after 4px, so a plain click on a box still opens it.
+{
+  let start = null, dragged = false;
+  graph.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    start = { x: e.clientX, y: e.clientY, left: graph.scrollLeft, top: graph.scrollTop };
+    dragged = false;
+  });
+  addEventListener('pointermove', e => {
+    if (!start) return;
+    const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    if (!dragged && Math.hypot(dx, dy) < 4) return;
+    if (!dragged) getSelection().removeAllRanges(); // the mouse-down already started a text selection
+    dragged = true;
+    graph.classList.add('panning');
+    graph.scrollLeft = start.left - dx;
+    graph.scrollTop = start.top - dy;
+  });
+  addEventListener('pointerup', () => { start = null; graph.classList.remove('panning'); });
+  // the click that ends a drag must not open the box under the pointer
+  graph.addEventListener('click', e => { if (dragged) { dragged = false; e.stopPropagation(); } }, true);
+}
 $('zin').onclick = () => setScale(scale * 1.25);
 $('zout').onclick = () => setScale(scale / 1.25);
 $('zfit').onclick = () => svg && fit();
