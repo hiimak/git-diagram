@@ -1,7 +1,7 @@
 {
   "name": "@hiimak/git-diagram",
   "version": "0.3.2",
-  "description": "git diagram: see an AI-sized diff as a connected file diagram (JS/TS, Python, Java, Kotlin, Spring, C#, Go) instead of reading it line by line",
+  "description": "git diagram: see an AI-sized diff as a connected file diagram (JS/TS, Python, Java, Kotlin, Spring, C#, Go, C, C++) instead of reading it line by line",
   "type": "module",
   "bin": {
     "git-diagram": "git-diagram.mjs"
@@ -34,6 +34,8 @@
     "csharp",
     "dotnet",
     "golang",
+    "c",
+    "cpp",
     "typescript",
     "python"
   ],

@@ -2,6 +2,11 @@
 
 All notable changes to `git diagram`. Versions follow [semantic versioning](https://semver.org/).
 
+## Unreleased
+
+- C and C++ support: `#include "x.h"` and `#include <x.h>` are resolved next to the file first, then to the closest repository file with that path. A `.c` / `.cpp` file that includes its same-named header is labelled "implements".
+- C and C++ symbols in the boxes: functions, C++ methods (`Store::load`), constructors and destructors, `struct`, `class`, `union`, `enum` and `namespace`.
+
 ## 0.3.2 — 2026-10-28
 
 - Click and hold to drag the diagram around with the mouse.

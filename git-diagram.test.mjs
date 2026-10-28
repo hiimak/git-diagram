@@ -4,7 +4,7 @@ import { parseDiff, toMermaid, parseArgs, excludePathspecs } from './git-diagram
 import { buildGraph, resolve, parseJsonc } from './lib/graph.mjs';
 import { loadGrammars, parseFile } from './lib/parse.mjs';
 
-await loadGrammars(new Set(['js', 'python', 'jvm', 'dotnet', 'go']));
+await loadGrammars(new Set(['js', 'python', 'jvm', 'dotnet', 'go', 'c']));
 const importsOf = (path, source) => parseFile(path, source).imports.map(({ spec, names }) => ({ spec, names }));
 const ctxFor = (files, sources = {}) => ({ repoFiles: new Set(files), readFile: p => sources[p] ?? null, tsconfigs: new Map() });
 
@@ -48,12 +48,16 @@ test('parseDiff reads status, counts, symbols and paths', () => {
     'A.java': ['@Override public List<Owner> findAll(int page) {', 'public <T> T get(Class<T> type) {', 'public OwnerController(OwnerRepository owners) {', 'return owners.findAll(page);', 'throw new IllegalStateException("x");', 'else save(owner);'],
     'B.cs': ['[HttpGet("{id}")] public async Task<IActionResult> Get(int id)', 'public BasketService(IRepository<Basket> repo,', 'return await _repo.ListAsync(spec);', 'Guard.Against.Null(basket, nameof(basket));', 'basket = new Basket(id);'],
     'C.ts': ['async load(@Param() id: string): Promise<User> {', 'constructor(private readonly db: Db) {}', 'private save(', 'register?(options: any): Module;', "describe('x', () => {", "it('y', async function () {", 'if (ready) {', 'expect(', 'foo(x);'],
+    'D.c': ['static const char *name(int x) {', 'struct node {', 'struct node *next(struct node *n)', 'void free(void *);', 'const char *msg = "x";', 'return foo(x);', 'default: panic("x");', ' * see listNext() for details'],
+    'E.cpp': ['std::vector<int> Store::load(const Key& k) const', 'Store::~Store() {', 'explicit Cache(const Options& o) : o_(o) {}', 'enum class Color {', 'Random rnd(301);', 'MutexLock l(&mu);', 'Start();', 'TEST_F(DBTest, Empty) {'],
   };
   const found = Object.entries(lines).map(([path, ls]) => parseDiff(`diff --git a/${path} b/${path}\n@@ -1 +1 @@\n${ls.map(l => '+' + l).join('\n')}\n`)[0].symbols.map(s => `${s.kind} ${s.name}`));
   assert.deepEqual(found, [
     ['method findAll', 'method get', 'constructor OwnerController'],
     ['method Get', 'constructor BasketService'],
     ['method load', 'constructor constructor', 'method save', 'method register'],
+    ['function name', 'struct node', 'function next', 'function free'],
+    ['method Store::load', 'destructor Store::~Store', 'constructor Cache', 'enum class Color'],
   ]);
   assert.deepEqual([old.path, old.status, old.del], ['old.js', 'deleted', 1]);
   assert.deepEqual([ren.oldPath, ren.path, ren.status, ren.diff], ['a b.txt', 'c d.txt', 'renamed', []]);
@@ -186,9 +190,9 @@ test('Java and Kotlin: imports, same package, and Spring injection', async () =>
   ]);
 });
 
-const edgeList = async files => {
+const edgeList = async (files, keepExtension) => {
   const edges = await buildGraph(Object.keys(files).map(path => ({ path })), new Set(Object.keys(files)), p => files[p]);
-  const short = p => p.split('/').pop().replace(/\.\w+$/, '');
+  const short = p => p.split('/').pop().replace(keepExtension ? /$/ : /\.\w+$/, '');
   return edges.map(e => `${short(e.from)} -> ${short(e.to)}: ${e.names.sort().join(', ')}`).sort();
 };
 
@@ -242,5 +246,26 @@ test('Go: packages by folder via go.mod, only the files that declare what is use
     'routes -> main: web.Routes',
     'store -> handler: db.Store',
     'store -> store_test: New',
+  ]);
+});
+
+test('C / C++: #include next to the file or under any include folder, and implements', async () => {
+  assert.deepEqual(await edgeList({
+    'include/net/socket.h': '#pragma once\nint sock_open(void);\n',
+    'src/net/socket.c': '#include "net/socket.h"\n#include <stdio.h>\nint sock_open(void) { return 0; }\n',
+    'src/util.h': 'int util(void);\n',
+    'src/util.c': '#include "util.h"\n',
+    'src/main.c': '#include "util.h"\n#ifdef NET\n#include <net/socket.h>\n#endif\nint main() {}\n',
+    'lib/store.hpp': '#pragma once\nclass Store {};\n',
+    'lib/store.cpp': '#include "store.hpp"\n#include <vector>\n',
+    'app/app.cc': '#include "../lib/store.hpp"\n',
+    'other/util.h': 'int other(void);\n',
+  }, true), [
+    'socket.h -> main.c: ',
+    'socket.h -> socket.c: implements',
+    'store.hpp -> app.cc: ',
+    'store.hpp -> store.cpp: implements',
+    'util.h -> main.c: ',
+    'util.h -> util.c: implements',
   ]);
 });

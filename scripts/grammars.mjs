@@ -16,6 +16,8 @@ const GRAMMARS = {
   '@tree-sitter-grammars/tree-sitter-kotlin@1.1.0': ['tree-sitter-kotlin.wasm'],
   'tree-sitter-c-sharp@0.23.5': ['tree-sitter-c_sharp.wasm'],
   'tree-sitter-go@0.25.0': ['tree-sitter-go.wasm'],
+  'tree-sitter-c@0.24.1': ['tree-sitter-c.wasm'],
+  'tree-sitter-cpp@0.23.4': ['tree-sitter-cpp.wasm'],
 };
 
 const out = new URL('../grammars/', import.meta.url);

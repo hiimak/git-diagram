@@ -55,7 +55,22 @@ const NOT_A_METHOD = '(?!(?:if|for|while|switch|catch|function|return|with|else|
 // (an interface's `save?(o: Order): void;` counts too: a call has no `: Type` before its `;`)
 const CLASS_METHOD = new RegExp(String.raw`^\s*${TS_MODIFIERS}*\*?${NOT_A_METHOD}([A-Za-z_$][\w$]*)\??\s*(?:<[^()]*>)?\((?!.*\bfunction\b)(?:[^()]|\([^()]*\))*\)(?:\s*(?::\s*[^={;]+)?\{\s*\}?|\s*:\s*[^={;]+;)\s*$`);
 const CLASS_METHOD_START = new RegExp(String.raw`^\s*(?:${TS_MODIFIERS}+\*?${NOT_A_METHOD}([A-Za-z_$][\w$]*)|(constructor))\s*(?:<[^()]*>)?\(\s*$`);
+// C / C++: `static const char *name(`, `std::vector<int> Store::load(`, `void save(int x);`: a return
+// type (any `*` / `&` may stick to either side), then the name and `(`. `Store::Store(` is a constructor.
+// A C++ variable built in place looks the same (`Random rnd(301);`, `MutexLock l(&mu);`), so the first
+// parameter must look like one: `int x`, `const Key& k`, `void *`, `int`, `...`, or nothing.
+const C_NOT_A_TYPE = '(?!(?:return|else|case|goto|new|delete|sizeof|throw|typedef|using|if|for|while|switch|do|co_return|co_await|co_yield|asm|__asm__|__asm|explicit|virtual|inline|static|extern|friend|constexpr|consteval)\\b)';
+const C_PARAMS = String.raw`\(\s*(?:\)|$|\.\.\.|(?:(?:const|volatile|struct|enum|union|unsigned|signed|long|short)\s+)*(?:(?:int|char|void|bool|float|double|long|short|size_t)\s*[,)]|(?!(?:new|delete|sizeof|return)\b)(?:::)?[A-Za-z_]\w*(?:::\w+)*(?:<[^()]*>)?(?:[\s*&]+[A-Za-z_]\w*\s*(?:[,)=[]|$)|\s*[*&]+\s*[,)])))`;
+const C_FUNCTION = new RegExp(String.raw`^(?!\s*(?:\/[/*]|\*))\s*(?:template\s*<.*>\s*)?(?:(?:static|inline|extern|virtual|explicit|constexpr|consteval|friend|const|volatile|unsigned|signed|long|short|struct|enum|union|typename|[A-Z][A-Z0-9_]*)\s+)*${C_NOT_A_TYPE}(?:::)?\w+(?:::\w+)*(?:<[^()]*>)?[\s*&]+((?:~?\w+(?:<[^()]*>)?::)*~?\w+)\s*${C_PARAMS}`);
+const C_CONSTRUCTOR = /^\s*(?:(?:inline|constexpr)\s+|template\s*<[^()]*>\s*)*((?:\w+(?:<[^()]*>)?::)*(\w+)(?:<[^()]*>)?::(~?)\2)\s*\(/;
+// C++ constructor inside its class: `explicit Store(const Options& o)`, `~Store() override {}`,
+// `Stats() { Start(); }`, `explicit Writer(File* f);`. A call (`Start();`) has no parameters that look like one.
+// ALL_CAPS names are macros (`TEST_F(`, `ASSERT_OK(`), and a bare `Name(` at the line end is too often a call.
+const CPP_CLASS_CONSTRUCTOR = new RegExp(String.raw`^\s*((?:(?:explicit|constexpr|inline|virtual)\s+)*)(~?)((?=\w*[a-z])[A-Z]\w*)\s*(?=${C_PARAMS})\((?!\s*$)(?:[^()]|\([^()]*\))*(?:\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:[:{;]|=\s*(?:delete|default)|$)|$)`);
+// `struct node {`, `class API Store : public Base`, `enum class Color {`, `namespace net {`; not `struct node *next(`
+const C_TYPE = /^\s*(?:typedef\s+)?(?:template\s*<.*>\s*)?(struct|class|union|enum(?:\s+class)?|namespace)\s+(?:\w+\s+)*?([A-Za-z_]\w*)\s*(?:[:{;]|$)/;
 const TYPED_LANGUAGES = new Set(['java', 'cs']);
+const C_LANGUAGES = new Set(['c', 'h', 'cc', 'cpp', 'cxx', 'c++', 'hh', 'hpp', 'hxx', 'h++', 'ipp', 'tpp', 'inl']);
 const JS_LANGUAGES = new Set(['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts']);
 
 // ---------------------------------------------------------------------------------------
@@ -138,14 +153,26 @@ function readHeaderLine(file, line) {
 const stripTrailingTab = path => path.replace(/\t$/, '');
 
 function addSymbol(file, sourceLine) {
+  const ext = file.path.slice(file.path.lastIndexOf('.') + 1).toLowerCase();
+  // C has no declaration keyword; `const char *x` must not read as a constant named `char`
+  if (C_LANGUAGES.has(ext)) return addCSymbol(file, sourceLine);
   const [, keyword, name] = sourceLine.match(DECLARATION) ?? [];
   if (name) { if (!file.symbols.has(name)) file.symbols.set(name, KIND[keyword] ?? keyword); return; }
-  const ext = file.path.slice(file.path.lastIndexOf('.') + 1).toLowerCase();
   const [kind, match] = TYPED_LANGUAGES.has(ext)
     ? (sourceLine.match(CONSTRUCTOR) ? ['constructor', sourceLine.match(CONSTRUCTOR)] : ['method', sourceLine.match(TYPED_METHOD)])
     : JS_LANGUAGES.has(ext) ? ['method', sourceLine.match(CLASS_METHOD) ?? sourceLine.match(CLASS_METHOD_START)] : [];
   const found = match && (match[1] ?? match[2]);
   if (found && !file.symbols.has(found)) file.symbols.set(found, found === 'constructor' ? 'constructor' : kind);
+}
+
+function addCSymbol(file, line) {
+  let name, kind, m;
+  if ((m = line.match(C_TYPE))) [name, kind] = [m[2], m[1].replace(/\s+/, ' ')];
+  else if ((m = line.match(C_CONSTRUCTOR))) [name, kind] = [m[1], m[3] ? 'destructor' : 'constructor'];
+  else if ((m = line.match(C_FUNCTION))) [name, kind] = [m[1], m[1].includes('::') ? 'method' : 'function'];
+  else if ((m = line.match(CPP_CLASS_CONSTRUCTOR)) && (m[1] || m[2] || !/^[^(]*\(\s*\)\s*;/.test(line))) [name, kind] = [m[2] + m[3], m[2] ? 'destructor' : 'constructor'];
+  name = name?.replace(/<[^()]*>/g, ''); // SkipList<Key, Cmp>::Insert -> SkipList::Insert
+  if (name && !file.symbols.has(name)) file.symbols.set(name, kind);
 }
 
 // ---------------------------------------------------------------------------------------

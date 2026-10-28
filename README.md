@@ -175,19 +175,21 @@ Every source file is read with a real parser ([tree-sitter](https://tree-sitter.
 | Spring (Java, Kotlin) | dependency injection: an interface handed to a constructor, an `@Autowired`/`@Inject` field or a Lombok `@RequiredArgsConstructor` class also points at the implementation Spring injects (narrowed by `@Qualifier` and `@Primary`), and `@Bean` methods point at the classes that receive the bean |
 | C# | `using` (also `global using`, `using static` and aliases), types of the same or an enclosing namespace; dependency injection: an interface taken by a constructor (also a primary constructor) or a Blazor `[Inject]` property points at its implementation, narrowed to the one registered with `services.AddScoped<IFoo, Foo>()` (also `AddTransient`, `AddSingleton`, `TryAdd…`, `AddKeyed…`) |
 | Go | imports resolved through `go.mod` (several modules per repo work), linked only to the files of the package that declare what is used (`store.New`), or to the whole package if nothing matches (`import _`); files of the same package by the names they share |
+| C, C++ (`.c .h .cc .cpp .cxx .hh .hpp .hxx` and more) | `#include "x.h"` next to the file, as the compiler looks first; otherwise (and for `#include <x.h>`) the repository file whose path ends in `x.h`, the closest one if there are several. A `.c` / `.cpp` file that includes its same-named header is labelled "implements" (`include/net/socket.h` → `src/net/socket.c`). System headers like `<vector>` match nothing and are left out. |
 
-More languages are coming: C, C++, PHP, Rust. Other files still appear as boxes with their diffs, just without arrows.
+More languages are coming: PHP, Rust. Other files still appear as boxes with their diffs, just without arrows.
 
 Known limits:
 
 - Bare package imports (`react`, `java.util.List`) are not drawn: they are not files in your repository.
+- C and C++ include folders (`-I`, CMake, `compile_commands.json`) are not read; the closest file with a matching path is taken instead. Macros and `#if` conditions are not evaluated, so every `#include` counts.
 - Go interfaces are implicit, so a Go interface does not point at its implementations.
 - A C# partial class spread over several files is linked through its first file only; `global using` lines in `.csproj` files are not read.
 - Spring Data repositories, events, `Class.forName` and HTTP calls between services are not followed.
 - The parser reads syntax, it does not compile: a type that is only inferred (`var x = factory.create()`) is not known.
 - Imports are read from your working tree, so for an old commit range the arrows show today's code.
 - Connections are file to file, not function to function.
-- Every file of a language that appears in the diff is parsed: about 2 ms per file, so around 16 seconds for a 9,000-file Java repository and 10 seconds for a 6,400-file Go one.
+- Every file of a language that appears in the diff is parsed: about 2 ms per file, so around 16 seconds for a 9,000-file Java repository and 10 seconds for a 6,400-file Go one, and 7 seconds for Redis (1,900 files).
 - The page loads the diagram library (Mermaid) and fonts from a CDN. Offline you still get a file list with diffs, but no diagram.
 
 ## Privacy
