@@ -2,10 +2,15 @@
 
 All notable changes to `git diagram`. Versions follow [semantic versioning](https://semver.org/).
 
-## Unreleased
+## 0.4.0 — 2026-10-29
 
 - C and C++ support: `#include "x.h"` and `#include <x.h>` are resolved next to the file first, then to the closest repository file with that path. A `.c` / `.cpp` file that includes its same-named header is labelled "implements".
 - C and C++ symbols in the boxes: functions, C++ methods (`Store::load`), constructors and destructors, `struct`, `class`, `union`, `enum` and `namespace`.
+- Bash support: `source` / `.` and scripts that are run (also through `exec`, `sudo`, `nohup`), with folders worked out from `$(dirname "$0")`, `${BASH_SOURCE%/*}`, `$(cd … && pwd)`, `$(git rev-parse --show-toplevel)` and variables. Scripts without extension are recognised by their `#!` line.
+- PowerShell support: dot-sourcing, `&`, `Import-Module`, `using module`, `$PSScriptRoot` and `Join-Path`, and the files a `.psd1` manifest names.
+- Dockerfile support: `COPY` / `ADD` sources (files, globs, changed files under a copied folder) and the scripts `RUN`, `CMD` and `ENTRYPOINT` start.
+- docker-compose support: `build`, `env_file`, `include`, `file:` entries and local `volumes`.
+- Bash and PowerShell functions, PowerShell classes and enums, and Dockerfile stages are shown in the boxes.
 
 ## 0.3.2 — 2026-10-28
 

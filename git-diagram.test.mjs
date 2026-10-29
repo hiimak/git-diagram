@@ -4,7 +4,7 @@ import { parseDiff, toMermaid, parseArgs, excludePathspecs } from './git-diagram
 import { buildGraph, resolve, parseJsonc } from './lib/graph.mjs';
 import { loadGrammars, parseFile } from './lib/parse.mjs';
 
-await loadGrammars(new Set(['js', 'python', 'jvm', 'dotnet', 'go', 'c']));
+await loadGrammars(new Set(['js', 'python', 'jvm', 'dotnet', 'go', 'c', 'script']));
 const importsOf = (path, source) => parseFile(path, source).imports.map(({ spec, names }) => ({ spec, names }));
 const ctxFor = (files, sources = {}) => ({ repoFiles: new Set(files), readFile: p => sources[p] ?? null, tsconfigs: new Map() });
 
@@ -50,6 +50,9 @@ test('parseDiff reads status, counts, symbols and paths', () => {
     'C.ts': ['async load(@Param() id: string): Promise<User> {', 'constructor(private readonly db: Db) {}', 'private save(', 'register?(options: any): Module;', "describe('x', () => {", "it('y', async function () {", 'if (ready) {', 'expect(', 'foo(x);'],
     'D.c': ['static const char *name(int x) {', 'struct node {', 'struct node *next(struct node *n)', 'void free(void *);', 'const char *msg = "x";', 'return foo(x);', 'default: panic("x");', ' * see listNext() for details'],
     'E.cpp': ['std::vector<int> Store::load(const Key& k) const', 'Store::~Store() {', 'explicit Cache(const Options& o) : o_(o) {}', 'enum class Color {', 'Random rnd(301);', 'MutexLock l(&mu);', 'Start();', 'TEST_F(DBTest, Empty) {'],
+    'F.sh': ['deploy() {', 'function build_all {', 'source lib.sh', 'echo "function x"'],
+    'G.ps1': ['function Get-Thing {', 'class Store {', 'enum Color { Red }', 'Get-Thing -Name x'],
+    'api/Dockerfile': ['FROM node:20 AS build', 'FROM --platform=linux/amd64 nginx AS web', 'FROM alpine', 'RUN make'],
   };
   const found = Object.entries(lines).map(([path, ls]) => parseDiff(`diff --git a/${path} b/${path}\n@@ -1 +1 @@\n${ls.map(l => '+' + l).join('\n')}\n`)[0].symbols.map(s => `${s.kind} ${s.name}`));
   assert.deepEqual(found, [
@@ -58,6 +61,9 @@ test('parseDiff reads status, counts, symbols and paths', () => {
     ['method load', 'constructor constructor', 'method save', 'method register'],
     ['function name', 'struct node', 'function next', 'function free'],
     ['method Store::load', 'destructor Store::~Store', 'constructor Cache', 'enum class Color'],
+    ['function deploy', 'function build_all'],
+    ['function Get-Thing', 'class Store', 'enum Color'],
+    ['stage build', 'stage web'],
   ]);
   assert.deepEqual([old.path, old.status, old.del], ['old.js', 'deleted', 1]);
   assert.deepEqual([ren.oldPath, ren.path, ren.status, ren.diff], ['a b.txt', 'c d.txt', 'renamed', []]);
@@ -267,5 +273,94 @@ test('C / C++: #include next to the file or under any include folder, and implem
     'store.hpp -> store.cpp: implements',
     'util.h -> main.c: ',
     'util.h -> util.c: implements',
+  ]);
+});
+
+test('Bash, PowerShell, Dockerfile and docker-compose: edge cases of reading paths', () => {
+  const read = (path, source) => parseFile(path, source)?.imports.map(i => `${i.names[0]} ${i.spec}${i.folder ? ' (folder)' : ''}`);
+  const cases = [
+    // Bash: comments, strings and here-docs are no commands
+    ['a.sh', '# source x.sh\necho "source y.sh"\ncat <<EOF\nsource z.sh\nEOF\n', []],
+    ['a.sh', 'if [ -f lib.sh ]; then . lib.sh; fi\nx=$(source sub.sh)\n', ['source lib.sh', 'source sub.sh']],
+    // the script's folder, its parent, the repository root, and plain variables
+    ['a.sh', 'HERE="$(cd "$(dirname "$0")" && pwd)"\nsource "$HERE/a.sh"\n', ['source a.sh']],
+    ['a.sh', 'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n. "$ROOT/lib/x.sh"\n', ['source ../lib/x.sh']],
+    ['a.sh', 'TOP=$(git rev-parse --show-toplevel)\nsource "$TOP/ci/env.sh"\n', ['source /ci/env.sh']],
+    ['bin/a', '#!/bin/bash\n. "$(dirname "$(dirname "$0")")/lib/f.bash"\nsource "`dirname $0`/g.sh"\n', ['source ../lib/f.bash', 'source g.sh']],
+    ['a.sh', 'LIB=lib\nsource "${LIB}/x.sh"\nsource "$(realpath "$(dirname "$0")")/y.sh"\n', ['source lib/x.sh', 'source y.sh']],
+    // what cannot be followed
+    ['a.sh', 'source "$1"\nsource ~/.bashrc\nsource /etc/profile\n. "$HOME/x.sh"\nsource lib/*.sh\nsource ${X:-a.sh}\n', []],
+    // runners and wrappers; options are skipped
+    ['a.sh', 'bash -x ./run.sh\nexec ./serve.sh "$@"\nsudo -E ./install.sh\nnohup ./bg.sh &\n/usr/bin/env\nsh -c "echo"\n', ['runs run.sh', 'runs serve.sh', 'runs install.sh', 'runs bg.sh']],
+    // PowerShell
+    ['a.ps1', '# . .\\x.ps1\n<# . .\\y.ps1 #>\n"& .\\z.ps1"\n', []],
+    ['a.ps1', String.raw`$root = Split-Path -Parent $PSScriptRoot
+. "$root\lib\x.ps1"
+$here = Split-Path -Parent $MyInvocation.MyCommand.Path
+& (Join-Path $here 'tools\b.ps1')
+Import-Module -Name "$PSScriptRoot\Mods\Store.psm1" -Force
+Import-Module $env:MODULE
+. $PSCommandPath
+& $exe`, ['dot-source ../lib/x.ps1', 'runs tools/b.ps1', 'Import-Module Mods/Store.psm1']],
+    ['a.ps1', '$ROOT = $PSScriptRoot\n. $root\\x.ps1\n. ${Root}/y.ps1\n', ['dot-source x.ps1', 'dot-source y.ps1']],
+    // Dockerfile
+    ['Dockerfile', 'copy a.txt b.txt /app/\nCOPY --link --chown=1000:1000 ["c d.txt", "./"]\nADD https://x.io/a.tgz /\nCOPY --from=build /out /out\nCOPY <<EOF /x\nhi\nEOF\nCOPY $SRC /src\nCOPY ./ ./\n# COPY gone.txt /\n', ['COPY a.txt (folder)', 'COPY b.txt (folder)', 'COPY c d.txt (folder)']],
+    ['app.Dockerfile', 'COPY .\\win\\app C:\\app\nRUN pip install -r requirements.txt && python manage.py migrate\nCMD ["/entry.sh"]\nENTRYPOINT ["sh", "./docker/entry.sh"]\n', ['COPY win/app (folder)', 'runs manage.py', 'runs ./docker/entry.sh']],
+    ['Dockerfile.md', 'COPY a /a\n', undefined],
+    // docker-compose
+    ['compose.yaml', 'services:\n  a:\n    build: { context: ., dockerfile: Dockerfile.dev }\n    env_file:\n      - path: ./a.env\n        required: false\n    volumes: [".:/app", "../shared:/s:ro", "cache:/c", "/abs:/x"]\n    dockerfile_inline: x\n  b:\n    build:\n      context: https://github.com/x/y.git\n      dockerfile_inline: |\n        FROM alpine\nsecrets:\n  db:\n    file: ./db.txt\n',
+      ['build Dockerfile.dev', 'env_file ./a.env', 'env_file false', 'volume ../shared (folder)', 'file ./db.txt']],
+  ];
+  for (const [path, source, expected] of cases) assert.deepEqual(read(path, source), expected, `${path}: ${source}`);
+});
+
+test('Bash, PowerShell, Dockerfile and docker-compose: the files they name', async () => {
+  const files = {
+    'scripts/deploy.sh': 'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\nsource "$DIR/lib/common.sh"\n./scripts/build.sh --fast\nsource "$HOME/.profile"\n# source scripts/old.sh\n',
+    'scripts/lib/common.sh': 'log() { echo "$@"; }\n',
+    'scripts/build.sh': 'bash ./lib/common.sh\n',
+    'scripts/old.sh': '',
+    'bin/run': '#!/usr/bin/env bash\n. "${BASH_SOURCE%/*}/../scripts/deploy.sh"\n: lib\n\\. ../scripts/old.sh\n',
+    'bin/notes': 'source scripts/old.sh\n',
+    // sourced by bin/run, so its $0 is bin/run: found by the end of the path
+    'scripts/lib/cmd.bash': '. "$(dirname "$(dirname "$0")")/scripts/lib/common.sh"\n',
+    'ps/Setup.ps1': String.raw`. "$PSScriptRoot\lib\Util.ps1"` + '\nImport-Module (Join-Path $PSScriptRoot "Store")\nImport-Module Az\n',
+    'ps/lib/Util.ps1': 'function Get-Thing {}\n',
+    'ps/Store/Store.psd1': "@{ RootModule = 'Store.psm1' }\n",
+    'ps/Store/Store.psm1': '',
+    'api/Dockerfile': 'FROM node:20 AS build\nCOPY package*.json ./\nCOPY src/ \\\n  ./src\nCOPY --from=build /app /app\nCOPY . .\nRUN ./docker/entrypoint.sh\n',
+    'api/package.json': '{}',
+    'api/package-lock.json': '{}',
+    'api/src/server.js': '',
+    'api/src/unchanged.js': '',
+    'api/docker/entrypoint.sh': '',
+    'docker-compose.yml': 'services:\n  api:\n    build: ./api\n    env_file: [.env]\n    volumes:\n      - ./conf:/etc/app\n      - data:/var/lib\n',
+    '.env': '',
+    'conf/app.ini': '',
+    // ./web is svc/web, whose files did not change; the changed web/ at the root is another folder
+    'svc/compose.yaml': 'services:\n  web:\n    volumes: ["./web:/srv"]\n',
+    'svc/web/keep.txt': '',
+    'web/app.js': '',
+  };
+  const changed = Object.keys(files).filter(p => p !== 'api/src/unchanged.js' && p !== 'svc/web/keep.txt');
+  const edges = await buildGraph(changed.map(path => ({ path })), new Set(Object.keys(files)), p => files[p]);
+  assert.deepEqual(edges.map(e => `${e.from} -> ${e.to}: ${e.names.join(', ')}`).sort(), [
+    '.env -> docker-compose.yml: env_file',
+    'api/Dockerfile -> docker-compose.yml: build',
+    'api/docker/entrypoint.sh -> api/Dockerfile: runs',
+    'api/package-lock.json -> api/Dockerfile: COPY',
+    'api/package.json -> api/Dockerfile: COPY',
+    'api/src/server.js -> api/Dockerfile: COPY',
+    'conf/app.ini -> docker-compose.yml: volume',
+    'ps/Store/Store.psd1 -> ps/Setup.ps1: Import-Module',
+    'ps/Store/Store.psm1 -> ps/Setup.ps1: Import-Module',
+    'ps/Store/Store.psm1 -> ps/Store/Store.psd1: module',
+    'ps/lib/Util.ps1 -> ps/Setup.ps1: dot-source',
+    'scripts/build.sh -> scripts/deploy.sh: runs',
+    'scripts/deploy.sh -> bin/run: source',
+    'scripts/lib/common.sh -> scripts/build.sh: runs',
+    'scripts/lib/common.sh -> scripts/deploy.sh: source',
+    'scripts/lib/common.sh -> scripts/lib/cmd.bash: source',
+    'scripts/old.sh -> bin/run: source',
   ]);
 });

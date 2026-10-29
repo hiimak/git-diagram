@@ -111,7 +111,7 @@ Quote patterns with `*` so your shell does not expand them. Ignored files are ne
 | Grey, dashed | not changed, but connected to a changed file |
 
 - **Arrows** point in the direction data flows: from the imported file to the file that uses it. The label shows what is imported.
-- **Boxes** show the status, `+added −removed` lines, and what the change touches, each with its kind: `class`, `interface`, `function`, `method`, `constructor`, `variable` and so on.
+- **Boxes** show the status, `+added −removed` lines, and what the change touches, each with its kind: `class`, `interface`, `function`, `method`, `constructor`, `variable`, a Dockerfile `stage` and so on.
 - **Folders** are the grouped lanes.
 
 ![The same diagram in light mode, with unchanged connected files shown as dashed boxes](docs/light.png)
@@ -165,7 +165,7 @@ Tested on a repository with about 100 changed files covering every kind of chang
 
 ## What it understands
 
-Every source file is read with a real parser ([tree-sitter](https://tree-sitter.github.io/)), so comments and strings never count as code. The parsers ship inside the package; there is nothing else to install.
+Every source file is read with a real parser ([tree-sitter](https://tree-sitter.github.io/)), so comments and strings never count as code (Dockerfiles are the one exception, see below). The parsers ship inside the package; there is nothing else to install.
 
 | Language | Arrows come from |
 | --- | --- |
@@ -177,12 +177,20 @@ Every source file is read with a real parser ([tree-sitter](https://tree-sitter.
 | Go | imports resolved through `go.mod` (several modules per repo work), linked only to the files of the package that declare what is used (`store.New`), or to the whole package if nothing matches (`import _`); files of the same package by the names they share |
 | C, C++ (`.c .h .cc .cpp .cxx .hh .hpp .hxx` and more) | `#include "x.h"` next to the file, as the compiler looks first; otherwise (and for `#include <x.h>`) the repository file whose path ends in `x.h`, the closest one if there are several. A `.c` / `.cpp` file that includes its same-named header is labelled "implements" (`include/net/socket.h` → `src/net/socket.c`). System headers like `<vector>` match nothing and are left out. |
 
+| Bash (`.sh .bash`, and scripts without extension whose `#!` line names a shell) | `source lib.sh` / `. lib.sh`, scripts it runs (`./build.sh`, `bash scripts/x.sh`). Folders are worked out: `$(dirname "$0")`, `${BASH_SOURCE%/*}`, `$(cd … && pwd)`, `$(git rev-parse --show-toplevel)`, and variables set from them. A path found nowhere else counts if exactly one repository file ends with it (a sourced file sees its caller's `$0`). |
+| PowerShell (`.ps1 .psm1 .psd1`) | dot-sourcing (`. "$PSScriptRoot\lib.ps1"`, also with `Join-Path`), `& .\x.ps1`, `Import-Module ./Store` (a folder means its `.psd1` / `.psm1`), `using module`, and the files a `.psd1` manifest names (`RootModule`, `NestedModules`, `ScriptsToProcess`...) |
+| Dockerfile (`Dockerfile`, `Dockerfile.dev`, `api.Dockerfile`, `Containerfile`) | `COPY` / `ADD` sources: a file, a glob like `package*.json`, or a folder (of which only the changed files are drawn). Scripts it runs (`RUN ./install.sh`, `CMD ["python", "app.py"]`). `COPY . .` and `COPY --from` are left out. |
+| docker-compose (`docker-compose.yml`, `compose.yaml` and variants) | `build:` (the service's Dockerfile, also with `context` / `dockerfile`), `env_file:`, `include:`, `extends` / `configs` / `secrets` `file:`, and local `volumes:` like `./nginx.conf:/etc/nginx/nginx.conf` |
+
+Paths in scripts and Dockerfiles are tried from the file's own folder first, then from the repository root. Docker and script arrows cross languages: a changed `package.json` or `entrypoint.sh` points at the Dockerfile that copies it.
+
 More languages are coming: PHP, Rust. Other files still appear as boxes with their diffs, just without arrows.
 
 Known limits:
 
 - Bare package imports (`react`, `java.util.List`) are not drawn: they are not files in your repository.
 - C and C++ include folders (`-I`, CMake, `compile_commands.json`) are not read; the closest file with a matching path is taken instead. Macros and `#if` conditions are not evaluated, so every `#include` counts.
+- Script paths built from other variables (`source "$LIB/x.sh"`, `Import-Module $name`) cannot be followed, and modules imported by name (`Import-Module Az`) are installed, not files in your repository. A Dockerfile's build context is guessed (its own folder, then the repository root), not read from the build command. The Dockerfile is read line by line, since no tree-sitter grammar for it is published on npm. A script without extension whose name contains a dot is not recognised.
 - Go interfaces are implicit, so a Go interface does not point at its implementations.
 - A C# partial class spread over several files is linked through its first file only; `global using` lines in `.csproj` files are not read.
 - Spring Data repositories, events, `Class.forName` and HTTP calls between services are not followed.
@@ -225,7 +233,7 @@ npm test
 
 - `git-diagram.mjs`: the command (reading the diff, writing the page).
 - `lib/parse.mjs`: reads one source file with tree-sitter and returns its imports, types and injections.
-- `lib/graph.mjs`: turns those into arrows (import resolution, tsconfig aliases, the Java/Kotlin/C# type index, dependency injection, Go packages).
+- `lib/graph.mjs`: turns those into arrows (import resolution, tsconfig aliases, the Java/Kotlin/C# type index, dependency injection, Go packages, C includes, paths in scripts and Docker files).
 - `page.html`: the page template.
 - `grammars/`: the bundled parsers. `npm run grammars` refreshes them from the official grammar packages (versions in `scripts/grammars.mjs`).
 

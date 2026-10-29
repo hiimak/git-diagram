@@ -17,6 +17,7 @@ import { copyFileSync, readFileSync, realpathSync, rmSync, statSync, writeFileSy
 import { join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildGraph } from './lib/graph.mjs';
+import { familyOf, grammarOf } from './lib/parse.mjs';
 
 // git's hash for "an empty tree". Diffing against it shows every file as added.
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -72,6 +73,10 @@ const C_TYPE = /^\s*(?:typedef\s+)?(?:template\s*<.*>\s*)?(struct|class|union|en
 const TYPED_LANGUAGES = new Set(['java', 'cs']);
 const C_LANGUAGES = new Set(['c', 'h', 'cc', 'cpp', 'cxx', 'c++', 'hh', 'hpp', 'hxx', 'h++', 'ipp', 'tpp', 'inl']);
 const JS_LANGUAGES = new Set(['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts']);
+// Bash `deploy() {` / `function deploy {`, PowerShell `function Get-Thing` / `class Store`, Dockerfile `FROM node AS build`
+const SH_FUNCTION = /^\s*(?:function\s+([\w.:-]+)|([\w.:-]+)\s*\(\s*\))/;
+const PS_DECLARATION = /^\s*(function|filter|workflow|class|enum|configuration)\s+([\w.:-]+)/i;
+const DOCKER_STAGE = /^\s*FROM\s+(?:--\S+\s+)*\S+\s+AS\s+([\w.-]+)/i;
 
 // ---------------------------------------------------------------------------------------
 // Step 2: read the diff
@@ -156,6 +161,7 @@ function addSymbol(file, sourceLine) {
   const ext = file.path.slice(file.path.lastIndexOf('.') + 1).toLowerCase();
   // C has no declaration keyword; `const char *x` must not read as a constant named `char`
   if (C_LANGUAGES.has(ext)) return addCSymbol(file, sourceLine);
+  if (familyOf(file.path) === 'script') return addScriptSymbol(file, sourceLine, grammarOf(file.path));
   const [, keyword, name] = sourceLine.match(DECLARATION) ?? [];
   if (name) { if (!file.symbols.has(name)) file.symbols.set(name, KIND[keyword] ?? keyword); return; }
   const [kind, match] = TYPED_LANGUAGES.has(ext)
@@ -163,6 +169,14 @@ function addSymbol(file, sourceLine) {
     : JS_LANGUAGES.has(ext) ? ['method', sourceLine.match(CLASS_METHOD) ?? sourceLine.match(CLASS_METHOD_START)] : [];
   const found = match && (match[1] ?? match[2]);
   if (found && !file.symbols.has(found)) file.symbols.set(found, found === 'constructor' ? 'constructor' : kind);
+}
+
+function addScriptSymbol(file, line, grammar) {
+  let m, name, kind;
+  if (grammar === 'bash' && (m = line.match(SH_FUNCTION))) [name, kind] = [m[1] ?? m[2], 'function'];
+  else if (grammar === 'powershell' && (m = line.match(PS_DECLARATION))) [name, kind] = [m[2], /^(?:class|enum|configuration)$/i.test(m[1]) ? m[1].toLowerCase() : 'function'];
+  else if (grammar === 'dockerfile' && (m = line.match(DOCKER_STAGE))) [name, kind] = [m[1], 'stage'];
+  if (name && !file.symbols.has(name)) file.symbols.set(name, kind);
 }
 
 function addCSymbol(file, line) {
